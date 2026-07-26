@@ -12,15 +12,24 @@ export class SourceController {
       const { notebookId } = req.params;
       const workspaceId = req.user?.workspaceId || 'default';
       const file = req.file;
-
-      const sourceType = (req.body.type || (file ? this.detectFileType(file.originalname) : 'text')) as SourceType;
-      const title = req.body.title || (file ? file.originalname : req.body.url || 'Untitled Source');
       const url = req.body.url;
       const content = req.body.content;
 
+      if (!file && !url && !content) {
+        res.status(400).json({
+          success: false,
+          code: 'MISSING_SOURCE_DATA',
+          message: 'No file, URL, or raw text content was provided in the upload request.',
+        });
+        return;
+      }
+
+      const sourceType = (req.body.type || (file ? this.detectFileType(file.originalname) : 'text')) as SourceType;
+      const title = req.body.title || (file ? file.originalname : url || 'Untitled Source');
+
       const sourceId = uuidv4();
 
-      // Initialize status in DB / statusService
+      // Initialize status in DB / statusService (with FK safety)
       await statusService.createStatus(sourceId, notebookId, title, sourceType, 'uploading', 10, workspaceId);
 
       // Launch background processing

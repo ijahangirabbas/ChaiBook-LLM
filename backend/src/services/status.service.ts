@@ -56,14 +56,43 @@ class StatusService {
     this.memoryCache.set(sourceId, state);
 
     try {
+      // Ensure workspace exists in DB to prevent foreign key error
+      const ws = await prisma.workspace.upsert({
+        where: { id: workspaceId },
+        create: {
+          id: workspaceId,
+          name: 'Personal Workspace',
+          slug: `ws-${workspaceId}`,
+        },
+        update: {},
+      });
+
+      // Ensure notebook exists in DB to prevent foreign key error
+      await prisma.notebook.upsert({
+        where: { id: notebookId },
+        create: {
+          id: notebookId,
+          workspaceId: ws.id,
+          title: 'Active Research Notebook',
+          userId: 'system',
+        },
+        update: {},
+      });
+
+      let prismaType: PrismaSourceType = PrismaSourceType.TEXT;
+      const upperType = type ? type.toUpperCase() : 'TEXT';
+      if (Object.values(PrismaSourceType).includes(upperType as PrismaSourceType)) {
+        prismaType = upperType as PrismaSourceType;
+      }
+
       await prisma.source.upsert({
         where: { id: sourceId },
         create: {
           id: sourceId,
           notebookId,
-          workspaceId,
+          workspaceId: ws.id,
           title,
-          type: (type.toUpperCase() as PrismaSourceType) || PrismaSourceType.TEXT,
+          type: prismaType,
           status: this.mapToPrismaStatus(status),
           indexingProgress: progress,
         },
@@ -73,7 +102,7 @@ class StatusService {
           indexingProgress: progress,
         },
       });
-    } catch {
+    } catch (err) {
       // Ignore DB errors during cache fallback
     }
 
