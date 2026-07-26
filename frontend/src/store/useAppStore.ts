@@ -29,8 +29,11 @@ export const useAppStore = create<AppState>()(
           const fetched = await ApiService.getNotebooks()
           set({ notebooks: fetched, loadingNotebooks: false })
         } catch (err: any) {
+          const is401 = err?.message?.includes('401') || err?.message?.includes('Unauthorized');
           set({
-            notebooksError: err?.message || 'Unable to connect to server and load notebooks.',
+            notebooksError: is401
+              ? 'Please sign in to view and manage your notebooks.'
+              : err?.message || 'Unable to connect to server and load notebooks.',
             loadingNotebooks: false,
           })
         }
