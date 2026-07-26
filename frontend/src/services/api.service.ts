@@ -109,6 +109,20 @@ export class ApiService {
     };
   }
 
+  static async addSourceContent(notebookId: string, title: string, content: string): Promise<{ sourceId: string; status: SourceIndexingStatus }> {
+    const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/sources`, {
+      method: 'POST',
+      headers: await this.headers(true),
+      body: JSON.stringify({ title, content, type: 'text' }),
+    });
+    if (!res.ok) throw new Error('Text source creation failed');
+    const json = await res.json();
+    return {
+      sourceId: json.sourceId,
+      status: json.status || 'uploading',
+    };
+  }
+
   static async fetchSourceStatus(sourceId: string): Promise<{ status: SourceIndexingStatus; progress: number; errorMessage?: string }> {
     const res = await fetch(`${API_BASE_URL}/sources/${sourceId}/status`, { headers: await this.headers() });
     if (!res.ok) throw new Error('Source status fetch failed');

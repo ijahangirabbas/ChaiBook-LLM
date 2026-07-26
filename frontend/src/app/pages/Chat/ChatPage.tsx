@@ -28,19 +28,34 @@ export function ChatPage() {
     setActiveNotebook,
     chatSessions,
     activeChatSessionId,
+    fetchNotebooksFromApi,
   } = useAppStore()
 
   const currentNotebookId = id
 
-  // Sync active notebook ID in store
+  // Sync active notebook ID in store & fetch notebooks on refresh
   useEffect(() => {
     if (currentNotebookId) {
       setActiveNotebook(currentNotebookId)
     }
-  }, [currentNotebookId, setActiveNotebook])
+    fetchNotebooksFromApi()
+  }, [currentNotebookId, setActiveNotebook, fetchNotebooksFromApi])
 
-  const currentNotebook = notebooks.find((n) => n.id === currentNotebookId)
-  const notebookTitle = currentNotebook?.title ?? ''
+  let currentNotebook = notebooks.find((n) => n.id === currentNotebookId)
+
+  // Fallback notebook object if page was refreshed directly
+  if (!currentNotebook && currentNotebookId) {
+    currentNotebook = {
+      id: currentNotebookId,
+      title: 'Active Research Notebook',
+      sourceCount: sources.filter(s => s.notebookId === currentNotebookId).length,
+      updatedAt: new Date(),
+      color: 'indigo',
+      icon: 'BookOpen',
+    }
+  }
+
+  const notebookTitle = currentNotebook?.title ?? 'Active Research Notebook'
 
   const activeSession = chatSessions.find((s) => s.id === activeChatSessionId)
   const currentMessages = activeSession ? activeSession.messages : storeMessages
@@ -60,7 +75,7 @@ export function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [currentMessages])
 
-  if (!currentNotebookId || !currentNotebook) {
+  if (!currentNotebookId) {
     return <div className="p-8 text-sm text-text-muted">This notebook is unavailable. Return to your dashboard and select a notebook.</div>
   }
 
@@ -154,7 +169,7 @@ export function ChatPage() {
       ) : (
         <div className="flex items-center gap-2">
           <h1 className="text-[15px] font-semibold text-text-primary dark:text-text-primary-dark">
-            {currentNotebook.title}
+            {notebookTitle}
           </h1>
           <motion.button
             whileHover={{ scale: 1.1 }}

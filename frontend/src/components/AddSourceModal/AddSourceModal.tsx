@@ -12,7 +12,7 @@ type Step = 'select' | 'configure'
 import { ApiService } from '../../services/api.service'
 
 export function AddSourceModal() {
-  const { addSourceModalOpen, setAddSourceModalOpen, activeNotebookId, notebooks, addSource } = useAppStore()
+  const { addSourceModalOpen, setAddSourceModalOpen, activeNotebookId, notebooks, addSource, addNotebook } = useAppStore()
   const [step, setStep] = useState<Step>('select')
   const [selectedType, setSelectedType] = useState<SourceType | null>(null)
 
@@ -56,15 +56,26 @@ export function AddSourceModal() {
   }
 
   const handleSubmit = async () => {
-    if (!selectedType || !currentNotebookId) return
+    if (!selectedType) return
     setIsSubmitting(true)
 
     try {
+      let targetNotebookId = currentNotebookId
+      if (!targetNotebookId) {
+        const created = await ApiService.createNotebook({
+          title: 'Active Research Notebook',
+          color: 'indigo',
+          icon: 'BookOpen',
+        })
+        addNotebook(created)
+        targetNotebookId = created.id
+      }
+
       if (selectedFile) {
-        const res = await ApiService.uploadSourceFile(currentNotebookId, selectedFile)
+        const res = await ApiService.uploadSourceFile(targetNotebookId, selectedFile)
         addSource({
           id: res.sourceId,
-          notebookId: currentNotebookId,
+          notebookId: targetNotebookId,
           type: selectedType,
           title: selectedFile.name,
           domain: selectedFile.name,
@@ -72,25 +83,44 @@ export function AddSourceModal() {
           status: 'indexing',
           indexingProgress: 25,
         })
-      } else if (urlInput) {
+      } else if (urlInput.trim()) {
         const res = await ApiService.addSourceUrl(
-          currentNotebookId,
-          urlInput,
+          targetNotebookId,
+          urlInput.trim(),
           selectedType === 'youtube' ? 'youtube' : 'webpage'
         )
+        let domainStr = 'webpage'
+        try {
+          domainStr = new URL(urlInput.trim()).hostname
+        } catch {
+          // ignore
+        }
         addSource({
           id: res.sourceId,
-          notebookId: currentNotebookId,
+          notebookId: targetNotebookId,
           type: selectedType,
-          title: urlInput,
-          url: urlInput,
-          domain: new URL(urlInput).hostname || 'webpage',
+          title: urlInput.trim(),
+          url: urlInput.trim(),
+          domain: domainStr,
+          number: Math.floor(Math.random() * 10) + 1,
+          status: 'indexing',
+          indexingProgress: 25,
+        })
+      } else if (textInput.trim()) {
+        const titleSnippet = textInput.trim().slice(0, 30) + '...'
+        const res = await ApiService.addSourceContent(targetNotebookId, titleSnippet, textInput.trim())
+        addSource({
+          id: res.sourceId,
+          notebookId: targetNotebookId,
+          type: 'text',
+          title: titleSnippet,
+          domain: 'Pasted Text',
           number: Math.floor(Math.random() * 10) + 1,
           status: 'indexing',
           indexingProgress: 25,
         })
       } else {
-        throw new Error('Choose a file or provide a supported URL before adding a source.')
+        throw new Error('Please select a file, enter a valid URL, or paste text before submitting.')
       }
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Unable to add this source.')

@@ -278,6 +278,10 @@ export const useAppStore = create<AppState>()(
       name: 'chaibook-storage',
       partialize: (state) => ({
         theme: state.theme,
+        isAuthenticated: state.isAuthenticated,
+        user: state.user,
+        activeNotebookId: state.activeNotebookId,
+        notebooks: state.notebooks,
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.theme === 'dark') {

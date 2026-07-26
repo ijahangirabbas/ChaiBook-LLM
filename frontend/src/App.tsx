@@ -5,10 +5,24 @@ import { supabase, isSupabaseConfigured } from './lib/supabase'
 import { useAppStore } from './store/useAppStore'
 
 export default function App() {
-  const { login, logout } = useAppStore()
+  const { isAuthenticated, login, logout, fetchNotebooksFromApi } = useAppStore()
 
   useEffect(() => {
-    if (!supabase || !isSupabaseConfigured) return
+    if (!isSupabaseConfigured || !supabase) {
+      // In local dev without Supabase configured, ensure user remains authenticated
+      if (!isAuthenticated) {
+        login({
+          id: 'dev-user',
+          name: 'ChaiBook User',
+          email: 'user@chaibook.ai',
+          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=chaibook',
+          plan: 'pro',
+          storage: { used: 1.2, total: 10 },
+        })
+      }
+      fetchNotebooksFromApi()
+      return
+    }
 
     // Sync active session on mount
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
@@ -23,6 +37,7 @@ export default function App() {
           plan: 'pro',
           storage: { used: 1.2, total: 10 },
         })
+        fetchNotebooksFromApi()
       }
     })
 
@@ -38,13 +53,14 @@ export default function App() {
           plan: 'pro',
           storage: { used: 1.2, total: 10 },
         })
+        fetchNotebooksFromApi()
       } else if (_event === 'SIGNED_OUT') {
         logout()
       }
     })
 
     return () => subscription.unsubscribe()
-  }, [login, logout])
+  }, [isAuthenticated, login, logout, fetchNotebooksFromApi])
 
   return <Router />
 }
