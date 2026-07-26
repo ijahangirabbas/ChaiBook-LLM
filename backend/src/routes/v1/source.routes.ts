@@ -6,6 +6,12 @@ import { authenticateUser } from '../../middlewares/auth.middleware';
 const router = Router();
 router.use(authenticateUser);
 
+// Presigned Upload Intent
+router.post(
+  '/notebooks/:notebookId/sources/upload-intent',
+  (req, res, next) => sourceController.createUploadIntent(req, res, next)
+);
+
 // Ingest Source into Notebook
 router.post(
   '/notebooks/:notebookId/sources',
@@ -17,6 +23,18 @@ router.post(
 router.get(
   '/sources/:sourceId/status',
   (req, res, next) => sourceController.getSourceStatus(req, res, next)
+);
+
+// Get Source Ingestion Events Log
+router.get(
+  '/sources/:sourceId/events',
+  (req, res, next) => sourceController.getSourceEvents(req, res, next)
+);
+
+// Get Source Preview & Download Metadata
+router.get(
+  '/sources/:sourceId/preview',
+  (req, res, next) => sourceController.getSourcePreview(req, res, next)
 );
 
 // Delete Source & Vectors

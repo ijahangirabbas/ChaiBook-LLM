@@ -8,6 +8,7 @@ import { CitedSource } from '../types/chat.types';
 import { sendSSEEvent } from '../utils/sse.utils';
 import { prisma } from '../db/prisma.client';
 import { MessageRole } from '@prisma/client';
+import { conversationRepository } from '../repositories/conversation.repository';
 
 export class RagService {
   async streamRAGResponse(
@@ -131,26 +132,33 @@ export class RagService {
       // Step 5: Emit Citations
       sendSSEEvent(res, { type: 'citations', sources: citedSources });
 
-      // Step 6: Persist Assistant Message & Generation stats in DB
+      // Step 6: Persist Assistant Message, Citations, & Generation stats in DB
       try {
         if (activeConversationId) {
-          const assistantMsg = await prisma.message.create({
-            data: {
-              conversationId: activeConversationId,
-              role: MessageRole.ASSISTANT,
-              content: fullResponseText,
-              sources: JSON.parse(JSON.stringify(citedSources)),
-            },
+          const assistantMsg = await conversationRepository.addMessage({
+            conversationId: activeConversationId,
+            role: 'assistant',
+            content: fullResponseText,
+            sources: citedSources,
           });
 
-          await prisma.generation.create({
-            data: {
-              messageId: assistantMsg.id,
-              model: config.chatModel,
-              promptTokens: formattedPrompt.length / 4,
-              completionTokens: fullResponseText.length / 4,
-              latencyMs: Date.now() - startTime,
-            },
+          await conversationRepository.saveCitationsForMessage(
+            assistantMsg.id,
+            citedSources.map((c) => ({
+              sourceId: c.source_id,
+              title: c.title,
+              snippet: c.retrievedChunk,
+              page: c.pageNumber,
+              score: c.similarity,
+            }))
+          );
+
+          await conversationRepository.saveGenerationStats({
+            messageId: assistantMsg.id,
+            model: config.chatModel,
+            promptTokens: Math.round(formattedPrompt.length / 4),
+            completionTokens: Math.round(fullResponseText.length / 4),
+            latencyMs: Date.now() - startTime,
           });
         }
       } catch {

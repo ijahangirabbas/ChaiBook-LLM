@@ -49,8 +49,14 @@ export const authenticateUser = async (
           message: 'Unauthorized: Invalid token signature',
         });
       }
+    } else if (process.env.NODE_ENV === 'production') {
+      return res.status(401).json({
+        success: false,
+        code: 'AUTH_CONFIG_ERROR',
+        message: 'Unauthorized: Server authentication secret is missing',
+      });
     } else {
-      // In dev fallback or if secret is not set, decode token payload safely
+      // In non-production development environments without a secret, safely decode payload
       decoded = jwt.decode(token) as JwtPayload;
     }
 

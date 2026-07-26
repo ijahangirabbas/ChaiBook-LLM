@@ -4,6 +4,7 @@ import { LoaderInput } from '../loaders/base.loader';
 import { vectorService } from './vector.service';
 import { statusService } from './status.service';
 import { SourceType } from '../types/source.types';
+import { prisma } from '../db/prisma.client';
 
 export interface ProcessSourceParams {
   sourceId: string;
@@ -14,15 +15,12 @@ export interface ProcessSourceParams {
   url?: string;
   filePath?: string;
   rawContent?: string;
+  jobId?: string;
 }
-
-const sourceParamStore = new Map<string, ProcessSourceParams>();
 
 export class SourceService {
   async processAndIndexSource(params: ProcessSourceParams): Promise<void> {
     const { sourceId, notebookId, workspaceId = 'default', sourceType, title } = params;
-
-    sourceParamStore.set(sourceId, params);
 
     try {
       await statusService.updateStatus(sourceId, 'indexing', 20);
@@ -73,24 +71,36 @@ export class SourceService {
     }
   }
 
-  async reindexSource(sourceId: string): Promise<void> {
-    const cachedParams = sourceParamStore.get(sourceId);
-    if (!cachedParams) {
-      throw new Error(`Source parameters for sourceId ${sourceId} not found for re-indexing.`);
+  async reindexSource(sourceId: string, workspaceId = 'default'): Promise<void> {
+    const dbSource = await prisma.source.findFirst({
+      where: { id: sourceId, deletedAt: null },
+    });
+
+    if (!dbSource) {
+      throw new Error(`Source ${sourceId} not found in database for re-indexing.`);
     }
+
+    const sourceType = dbSource.type.toLowerCase() as SourceType;
+    const processParams: ProcessSourceParams = {
+      sourceId: dbSource.id,
+      notebookId: dbSource.notebookId,
+      workspaceId: dbSource.workspaceId || workspaceId,
+      sourceType,
+      title: dbSource.title,
+      url: dbSource.url || undefined,
+    };
 
     await vectorService.deleteSourceVectors(sourceId);
     await statusService.updateStatus(sourceId, 'uploading', 0);
 
     setImmediate(() => {
-      this.processAndIndexSource(cachedParams);
+      this.processAndIndexSource(processParams);
     });
   }
 
-  async deleteSource(sourceId: string): Promise<void> {
+  async deleteSource(sourceId: string, workspaceId = 'default'): Promise<void> {
     await vectorService.deleteSourceVectors(sourceId);
     await statusService.deleteStatus(sourceId);
-    sourceParamStore.delete(sourceId);
     console.log(`🗑️ Source ${sourceId} completely deleted from system.`);
   }
 }

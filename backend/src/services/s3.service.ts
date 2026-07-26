@@ -40,6 +40,17 @@ export class S3Service {
     return `https://${this.bucketName}.s3.amazonaws.com/${s3Key}`;
   }
 
+  async getPresignedUploadUrl(s3Key: string, contentType: string, expiresInSeconds = 3600): Promise<{ uploadUrl: string; s3Key: string } | null> {
+    if (!this.client) return null;
+    const command = new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: s3Key,
+      ContentType: contentType,
+    });
+    const uploadUrl = await getSignedUrl(this.client, command, { expiresIn: expiresInSeconds });
+    return { uploadUrl, s3Key };
+  }
+
   async getPresignedDownloadUrl(s3Key: string, expiresInSeconds = 3600): Promise<string | null> {
     if (!this.client) return null;
     const command = new GetObjectCommand({ Bucket: this.bucketName, Key: s3Key });

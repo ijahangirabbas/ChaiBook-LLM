@@ -1,10 +1,14 @@
 import app from './app';
 import { config } from './config/env.config';
 import { initializeQdrantCollection } from './config/qdrant.config';
+import { startIngestionWorker } from './queue/ingestion.queue';
 
 async function bootstrap() {
   // Initialize Qdrant database collection and payload indexes
   await initializeQdrantCollection();
+
+  // Initialize BullMQ worker process handler for durable ingestion
+  startIngestionWorker();
 
   app.listen(config.port, () => {
     console.log(`

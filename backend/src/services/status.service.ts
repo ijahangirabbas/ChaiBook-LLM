@@ -3,8 +3,6 @@ import { prisma } from '../db/prisma.client';
 import { IndexingStatus, SourceType as PrismaSourceType } from '@prisma/client';
 
 class StatusService {
-  private memoryCache: Map<string, SourceIndexingState> = new Map();
-
   private mapPrismaStatus(status: IndexingStatus): SourceIndexingStatus {
     switch (status) {
       case IndexingStatus.UPLOADING:
@@ -42,130 +40,103 @@ class StatusService {
     progress = 0,
     workspaceId = 'default'
   ): Promise<SourceIndexingState> {
-    const state: SourceIndexingState = {
-      sourceId,
-      notebookId,
-      title,
-      type,
-      status,
-      progress,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    // Ensure workspace exists in DB to prevent foreign key error
+    const ws = await prisma.workspace.upsert({
+      where: { id: workspaceId },
+      create: {
+        id: workspaceId,
+        name: 'Personal Workspace',
+        slug: `ws-${workspaceId}`,
+      },
+      update: {},
+    });
 
-    this.memoryCache.set(sourceId, state);
+    // Ensure notebook exists in DB to prevent foreign key error
+    await prisma.notebook.upsert({
+      where: { id: notebookId },
+      create: {
+        id: notebookId,
+        workspaceId: ws.id,
+        title: 'Active Research Notebook',
+        userId: 'system',
+      },
+      update: {},
+    });
 
-    try {
-      // Ensure workspace exists in DB to prevent foreign key error
-      const ws = await prisma.workspace.upsert({
-        where: { id: workspaceId },
-        create: {
-          id: workspaceId,
-          name: 'Personal Workspace',
-          slug: `ws-${workspaceId}`,
-        },
-        update: {},
-      });
-
-      // Ensure notebook exists in DB to prevent foreign key error
-      await prisma.notebook.upsert({
-        where: { id: notebookId },
-        create: {
-          id: notebookId,
-          workspaceId: ws.id,
-          title: 'Active Research Notebook',
-          userId: 'system',
-        },
-        update: {},
-      });
-
-      let prismaType: PrismaSourceType = PrismaSourceType.TEXT;
-      const upperType = type ? type.toUpperCase() : 'TEXT';
-      if (Object.values(PrismaSourceType).includes(upperType as PrismaSourceType)) {
-        prismaType = upperType as PrismaSourceType;
-      }
-
-      await prisma.source.upsert({
-        where: { id: sourceId },
-        create: {
-          id: sourceId,
-          notebookId,
-          workspaceId: ws.id,
-          title,
-          type: prismaType,
-          status: this.mapToPrismaStatus(status),
-          indexingProgress: progress,
-        },
-        update: {
-          title,
-          status: this.mapToPrismaStatus(status),
-          indexingProgress: progress,
-        },
-      });
-    } catch (err) {
-      // Ignore DB errors during cache fallback
+    let prismaType: PrismaSourceType = PrismaSourceType.TEXT;
+    const upperType = type ? type.toUpperCase() : 'TEXT';
+    if (Object.values(PrismaSourceType).includes(upperType as PrismaSourceType)) {
+      prismaType = upperType as PrismaSourceType;
     }
 
-    return state;
+    const created = await prisma.source.upsert({
+      where: { id: sourceId },
+      create: {
+        id: sourceId,
+        notebookId,
+        workspaceId: ws.id,
+        title,
+        type: prismaType,
+        status: this.mapToPrismaStatus(status),
+        indexingProgress: progress,
+      },
+      update: {
+        title,
+        status: this.mapToPrismaStatus(status),
+        indexingProgress: progress,
+      },
+    });
+
+    return {
+      sourceId: created.id,
+      notebookId: created.notebookId,
+      title: created.title,
+      type: created.type.toLowerCase() as SourceType,
+      status: this.mapPrismaStatus(created.status),
+      progress: created.indexingProgress,
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
+    };
   }
 
   async updateStatus(
     sourceId: string,
     status: SourceIndexingStatus,
     progress?: number,
-    errorMessage?: string,
-    metadata?: Record<string, any>
+    errorMessage?: string
   ): Promise<SourceIndexingState | undefined> {
-    const current = this.memoryCache.get(sourceId) || {
-      sourceId,
-      notebookId: 'unknown',
-      title: 'Source',
-      type: 'text' as SourceType,
-      status,
-      progress: progress || 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    current.status = status;
-    if (progress !== undefined) {
-      current.progress = progress;
-    }
-    if (errorMessage !== undefined) {
-      current.errorMessage = errorMessage;
-    }
-    if (metadata) {
-      current.metadata = { ...current.metadata, ...metadata };
-    }
-    current.updatedAt = new Date();
-
-    this.memoryCache.set(sourceId, current);
-
     try {
-      await prisma.source.update({
+      const updated = await prisma.source.update({
         where: { id: sourceId },
         data: {
           status: this.mapToPrismaStatus(status),
-          indexingProgress: progress !== undefined ? progress : undefined,
-          errorMessage: errorMessage !== undefined ? errorMessage : undefined,
+          ...(progress !== undefined ? { indexingProgress: progress } : {}),
+          ...(errorMessage !== undefined ? { errorMessage } : {}),
         },
       });
-    } catch {
-      // Ignore DB errors during cache update
-    }
 
-    return current;
+      return {
+        sourceId: updated.id,
+        notebookId: updated.notebookId,
+        title: updated.title,
+        type: updated.type.toLowerCase() as SourceType,
+        status: this.mapPrismaStatus(updated.status),
+        progress: updated.indexingProgress,
+        errorMessage: updated.errorMessage || undefined,
+        createdAt: updated.createdAt,
+        updatedAt: updated.updatedAt,
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   async getStatus(sourceId: string): Promise<SourceIndexingState | undefined> {
-    const cached = this.memoryCache.get(sourceId);
-    if (cached) return cached;
-
     try {
       const source = await prisma.source.findUnique({ where: { id: sourceId } });
-      if (!source) return undefined;
+      if (!source || source.deletedAt) return undefined;
 
-      const state: SourceIndexingState = {
+      return {
         sourceId: source.id,
         notebookId: source.notebookId,
         title: source.title,
@@ -176,16 +147,12 @@ class StatusService {
         createdAt: source.createdAt,
         updatedAt: source.updatedAt,
       };
-
-      this.memoryCache.set(sourceId, state);
-      return state;
     } catch {
       return undefined;
     }
   }
 
   async deleteStatus(sourceId: string): Promise<boolean> {
-    this.memoryCache.delete(sourceId);
     try {
       await prisma.source.update({
         where: { id: sourceId },
@@ -206,24 +173,20 @@ class StatusService {
         },
       });
 
-      if (sources.length > 0) {
-        return sources.map((s) => ({
-          sourceId: s.id,
-          notebookId: s.notebookId,
-          title: s.title,
-          type: s.type.toLowerCase() as SourceType,
-          status: this.mapPrismaStatus(s.status),
-          progress: s.indexingProgress,
-          errorMessage: s.errorMessage || undefined,
-          createdAt: s.createdAt,
-          updatedAt: s.updatedAt,
-        }));
-      }
+      return sources.map((s) => ({
+        sourceId: s.id,
+        notebookId: s.notebookId,
+        title: s.title,
+        type: s.type.toLowerCase() as SourceType,
+        status: this.mapPrismaStatus(s.status),
+        progress: s.indexingProgress,
+        errorMessage: s.errorMessage || undefined,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      }));
     } catch {
-      // Fallback to in-memory cache
+      return [];
     }
-
-    return Array.from(this.memoryCache.values());
   }
 }
 
