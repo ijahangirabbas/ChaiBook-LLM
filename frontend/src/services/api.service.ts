@@ -1,7 +1,17 @@
 import type { Notebook, SourceIndexingStatus } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
+function getApiBaseUrl(): string {
+  let raw = (import.meta.env.VITE_API_URL || '').trim();
+  if (!raw) return 'http://localhost:3001/api/v1';
+  raw = raw.replace(/\/+$/, '');
+  if (!raw.endsWith('/api/v1')) {
+    return `${raw}/api/v1`;
+  }
+  return raw;
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 export class ApiService {
   private static async headers(json = false): Promise<HeadersInit> {
