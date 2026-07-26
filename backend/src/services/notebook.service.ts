@@ -1,4 +1,5 @@
-import { statusService } from './status.service';
+import { prisma } from '../db/prisma.client';
+import { IndexingStatus, SourceType } from '@prisma/client';
 
 export interface NotebookModel {
   id: string;
@@ -7,128 +8,198 @@ export interface NotebookModel {
   color: string;
   icon: string;
   sourceCount?: number;
+  workspaceId?: string;
+  userId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const initialNotebooks: NotebookModel[] = [
-  {
-    id: 'nb-1',
-    title: 'Machine Learning Notes',
-    description: 'Core machine learning & deep learning concepts',
-    color: 'indigo',
-    icon: 'BookOpen',
-    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-    updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-  },
-  {
-    id: 'nb-2',
-    title: 'RAG Research',
-    description: 'Retrieval Augmented Generation papers & architecture notes',
-    color: 'green',
-    icon: 'Database',
-    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
-    updatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-  },
-  {
-    id: 'nb-3',
-    title: 'Python Tutorials',
-    description: 'Advanced Python, asyncio and framework guides',
-    color: 'blue',
-    icon: 'FileText',
-    createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
-    updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-  },
-  {
-    id: 'nb-4',
-    title: 'System Design',
-    description: 'Distributed systems, indexing, and databases',
-    color: 'orange',
-    icon: 'Layout',
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-    updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-  },
-];
-
 export class NotebookService {
-  private notebooks: Map<string, NotebookModel> = new Map();
+  async getAllNotebooks(workspaceId: string): Promise<NotebookModel[]> {
+    try {
+      const notebooks = await prisma.notebook.findMany({
+        where: {
+          workspaceId,
+          deletedAt: null,
+        },
+        include: {
+          _count: {
+            select: { sources: { where: { deletedAt: null } } },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
 
-  constructor() {
-    initialNotebooks.forEach((nb) => this.notebooks.set(nb.id, nb));
+      return notebooks.map((nb) => ({
+        id: nb.id,
+        title: nb.title,
+        description: nb.description || undefined,
+        color: nb.color,
+        icon: nb.icon,
+        sourceCount: nb._count.sources,
+        workspaceId: nb.workspaceId,
+        userId: nb.userId,
+        createdAt: nb.createdAt,
+        updatedAt: nb.updatedAt,
+      }));
+    } catch (error) {
+      return [];
+    }
   }
 
-  async getAllNotebooks(): Promise<NotebookModel[]> {
-    const list = Array.from(this.notebooks.values());
-    const allStatuses = statusService.getAllStatuses();
+  async getNotebookById(id: string, workspaceId: string): Promise<NotebookModel | undefined> {
+    try {
+      const nb = await prisma.notebook.findFirst({
+        where: {
+          id,
+          workspaceId,
+          deletedAt: null,
+        },
+        include: {
+          _count: {
+            select: { sources: { where: { deletedAt: null } } },
+          },
+        },
+      });
 
-    return list.map((nb) => {
-      const sourcesForNb = allStatuses.filter((s) => s.notebookId === nb.id);
+      if (!nb) return undefined;
+
       return {
-        ...nb,
-        sourceCount: Math.max(sourcesForNb.length, nb.id === 'nb-1' ? 4 : 0),
+        id: nb.id,
+        title: nb.title,
+        description: nb.description || undefined,
+        color: nb.color,
+        icon: nb.icon,
+        sourceCount: nb._count.sources,
+        workspaceId: nb.workspaceId,
+        userId: nb.userId,
+        createdAt: nb.createdAt,
+        updatedAt: nb.updatedAt,
       };
-    });
+    } catch (error) {
+      return undefined;
+    }
   }
 
-  async getNotebookById(id: string): Promise<NotebookModel | undefined> {
-    const nb = this.notebooks.get(id);
-    if (!nb) return undefined;
-    const allStatuses = statusService.getAllStatuses();
-    const sourcesForNb = allStatuses.filter((s) => s.notebookId === id);
-    return {
-      ...nb,
-      sourceCount: Math.max(sourcesForNb.length, id === 'nb-1' ? 4 : 0),
-    };
-  }
-
-  async createNotebook(data: { title: string; description?: string; color?: string; icon?: string }): Promise<NotebookModel> {
-    const id = `nb-${Date.now()}`;
-    const newNotebook: NotebookModel = {
-      id,
-      title: data.title || 'Untitled Notebook',
-      description: data.description || '',
-      color: data.color || 'indigo',
-      icon: data.icon || 'BookOpen',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.notebooks.set(id, newNotebook);
-    return newNotebook;
-  }
-
-  async updateNotebook(id: string, data: Partial<{ title: string; description: string; color: string; icon: string }>): Promise<NotebookModel | undefined> {
-    const existing = this.notebooks.get(id);
-    if (!existing) {
-      // Auto-create if updating non-existent notebook
-      const created: NotebookModel = {
-        id,
+  async createNotebook(data: {
+    title: string;
+    description?: string;
+    color?: string;
+    icon?: string;
+    workspaceId: string;
+    userId: string;
+  }): Promise<NotebookModel> {
+    const created = await prisma.notebook.create({
+      data: {
         title: data.title || 'Untitled Notebook',
         description: data.description || '',
         color: data.color || 'indigo',
-        icon: data.icon || 'BookOpen',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      this.notebooks.set(id, created);
-      return created;
-    }
+        icon: data.icon || 'book',
+        workspaceId: data.workspaceId,
+        userId: data.userId,
+      },
+    });
 
-    const updated: NotebookModel = {
-      ...existing,
-      ...data,
-      updatedAt: new Date(),
+    return {
+      id: created.id,
+      title: created.title,
+      description: created.description || undefined,
+      color: created.color,
+      icon: created.icon,
+      sourceCount: 0,
+      workspaceId: created.workspaceId,
+      userId: created.userId,
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
     };
-    this.notebooks.set(id, updated);
-    return updated;
   }
 
-  async deleteNotebook(id: string): Promise<boolean> {
-    return this.notebooks.delete(id);
+  async updateNotebook(
+    id: string,
+    workspaceId: string,
+    data: Partial<{ title: string; description: string; color: string; icon: string }>
+  ): Promise<NotebookModel | undefined> {
+    try {
+      const existing = await prisma.notebook.findFirst({
+        where: { id, workspaceId, deletedAt: null },
+      });
+
+      if (!existing) {
+        // Strict 404: Do NOT auto-create non-existent notebook on update
+        return undefined;
+      }
+
+      const updated = await prisma.notebook.update({
+        where: { id },
+        data: {
+          ...(data.title !== undefined && { title: data.title }),
+          ...(data.description !== undefined && { description: data.description }),
+          ...(data.color !== undefined && { color: data.color }),
+          ...(data.icon !== undefined && { icon: data.icon }),
+        },
+      });
+
+      return {
+        id: updated.id,
+        title: updated.title,
+        description: updated.description || undefined,
+        color: updated.color,
+        icon: updated.icon,
+        workspaceId: updated.workspaceId,
+        userId: updated.userId,
+        createdAt: updated.createdAt,
+        updatedAt: updated.updatedAt,
+      };
+    } catch (error) {
+      return undefined;
+    }
   }
 
-  async getSourcesForNotebook(notebookId: string) {
-    const allStatuses = statusService.getAllStatuses();
-    return allStatuses.filter((s) => s.notebookId === notebookId);
+  async deleteNotebook(id: string, workspaceId: string): Promise<boolean> {
+    try {
+      const existing = await prisma.notebook.findFirst({
+        where: { id, workspaceId, deletedAt: null },
+      });
+
+      if (!existing) return false;
+
+      // Soft delete
+      await prisma.notebook.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async getSourcesForNotebook(notebookId: string, workspaceId: string) {
+    try {
+      const sources = await prisma.source.findMany({
+        where: {
+          notebookId,
+          workspaceId,
+          deletedAt: null,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return sources.map((s) => ({
+        id: s.id,
+        notebookId: s.notebookId,
+        type: s.type,
+        title: s.title,
+        url: s.url || undefined,
+        s3Key: s.s3Key || undefined,
+        status: s.status,
+        indexingProgress: s.indexingProgress,
+        errorMessage: s.errorMessage || undefined,
+        createdAt: s.createdAt,
+      }));
+    } catch (error) {
+      return [];
+    }
   }
 }
 

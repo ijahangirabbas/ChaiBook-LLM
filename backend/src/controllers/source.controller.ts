@@ -1,14 +1,16 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { sourceService } from '../services/source.service';
 import { statusService } from '../services/status.service';
 import { SourceType } from '../types/source.types';
+import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 
 export class SourceController {
   // POST /api/v1/notebooks/:notebookId/sources
-  async createSource(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async createSource(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { notebookId } = req.params;
+      const workspaceId = req.user?.workspaceId || 'default';
       const file = req.file;
 
       const sourceType = (req.body.type || (file ? this.detectFileType(file.originalname) : 'text')) as SourceType;
@@ -18,14 +20,15 @@ export class SourceController {
 
       const sourceId = uuidv4();
 
-      // Initialize status to uploading
-      statusService.createStatus(sourceId, notebookId, title, sourceType, 'uploading', 10);
+      // Initialize status in DB / statusService
+      await statusService.createStatus(sourceId, notebookId, title, sourceType, 'uploading', 10, workspaceId);
 
-      // Launch async background processing
+      // Launch background processing
       setImmediate(() => {
         sourceService.processAndIndexSource({
           sourceId,
           notebookId,
+          workspaceId,
           sourceType,
           title,
           url,
@@ -34,11 +37,12 @@ export class SourceController {
         });
       });
 
-      // Immediate 202 Accepted response with sourceId & status
+      // Immediate 202 Accepted response
       res.status(202).json({
         success: true,
         sourceId,
         notebookId,
+        workspaceId,
         status: 'uploading',
         progress: 10,
         message: 'Source upload accepted. Processing started in background.',
@@ -49,10 +53,10 @@ export class SourceController {
   }
 
   // GET /api/v1/sources/:sourceId/status
-  async getSourceStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async getSourceStatus(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { sourceId } = req.params;
-      const statusState = statusService.getStatus(sourceId);
+      const statusState = await statusService.getStatus(sourceId);
 
       if (!statusState) {
         res.status(404).json({
@@ -76,7 +80,7 @@ export class SourceController {
   }
 
   // DELETE /api/v1/sources/:sourceId
-  async deleteSource(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async deleteSource(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { sourceId } = req.params;
       await sourceService.deleteSource(sourceId);
@@ -92,7 +96,7 @@ export class SourceController {
   }
 
   // POST /api/v1/sources/:sourceId/reindex
-  async reindexSource(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async reindexSource(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { sourceId } = req.params;
       await sourceService.reindexSource(sourceId);

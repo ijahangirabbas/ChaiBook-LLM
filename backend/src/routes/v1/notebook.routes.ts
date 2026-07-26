@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { notebookController } from '../../controllers/notebook.controller';
+import { authenticateUser } from '../../middlewares/auth.middleware';
 
 const router = Router();
+router.use(authenticateUser);
 
 router.get('/notebooks', (req, res, next) => notebookController.getNotebooks(req, res, next));
 router.post('/notebooks', (req, res, next) => notebookController.createNotebook(req, res, next));

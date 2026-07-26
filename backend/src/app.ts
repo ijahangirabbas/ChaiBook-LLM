@@ -3,11 +3,12 @@ import cors from 'cors';
 import apiV1Routes from './routes/v1';
 import { errorHandler } from './middlewares/error.middleware';
 import { checkRedisConnection } from './queue/ingestion.queue';
+import { config } from './config/env.config';
 
 const app = express();
 
 // Middlewares
-app.use(cors({ origin: '*' }));
+app.use(cors({ origin: config.corsOrigins, methods: ['GET', 'POST', 'PATCH', 'DELETE'], allowedHeaders: ['Authorization', 'Content-Type'] }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 

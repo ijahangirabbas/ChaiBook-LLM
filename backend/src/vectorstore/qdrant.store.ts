@@ -58,23 +58,33 @@ export class QdrantVectorStore implements IVectorStore {
     }
   }
 
-  async similaritySearch(query: string, notebookId: string, limit = 5): Promise<VectorSearchResult[]> {
+  async similaritySearch(query: string, notebookId: string, limit = 5, workspaceId?: string): Promise<VectorSearchResult[]> {
     const queryVector = await this.embeddings.embedQuery(query);
 
+    const mustFilters: any[] = [
+      {
+        key: 'metadata.notebook_id',
+        match: {
+          value: notebookId,
+        },
+      },
+    ];
+
+    if (workspaceId) {
+      mustFilters.push({
+        key: 'metadata.workspace_id',
+        match: {
+          value: workspaceId,
+        },
+      });
+    }
+
     try {
-      // Hard filter enforcement on notebook_id for workspace multi-tenant isolation
       const searchResult = await qdrantClient.search(config.qdrantCollectionName, {
         vector: queryVector,
         limit: limit,
         filter: {
-          must: [
-            {
-              key: 'metadata.notebook_id',
-              match: {
-                value: notebookId,
-              },
-            },
-          ],
+          must: mustFilters,
         },
       });
 
@@ -92,7 +102,7 @@ export class QdrantVectorStore implements IVectorStore {
       console.warn(`⚠️ Searching in memory fallback due to Qdrant connection issue: ${(qdrantError as Error).message}`);
 
       const filtered = this.inMemoryFallbackStore.filter(
-        (item) => item.document.metadata.notebook_id === notebookId
+        (item) => item.document.metadata.notebook_id === notebookId && (!workspaceId || item.document.metadata.workspace_id === workspaceId)
       );
 
       const scored = filtered.map((item) => {

@@ -9,6 +9,8 @@ export const config = {
   qdrantCollectionName: process.env.QDRANT_COLLECTION_NAME || 'chaibook_sources',
   embeddingModel: 'text-embedding-3-small',
   chatModel: 'gpt-4o',
+  supabaseJwtSecret: process.env.SUPABASE_JWT_SECRET || '',
+  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map((origin) => origin.trim()),
 };
 
 if (!config.openaiApiKey) {

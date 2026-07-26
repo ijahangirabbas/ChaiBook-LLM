@@ -1,18 +1,23 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Search, BookOpen, Database, Sparkles, Folder } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Header } from '../../../components/Header/Header'
 import { NotebookCard } from '../../../components/NotebookCard/NotebookCard'
 import { useAppStore } from '../../../store/useAppStore'
+import { ApiService } from '../../../services/api.service'
 import type { NotebookColor } from '../../../types'
 import { cn } from '../../../lib/utils'
 
 export function NotebooksPage() {
   const navigate = useNavigate()
-  const { notebooks, setActiveNotebook, addNotebook } = useAppStore()
+  const { notebooks, setActiveNotebook, addNotebook, fetchNotebooksFromApi } = useAppStore()
   const [searchFilter, setSearchFilter] = useState('')
   const [selectedColor, setSelectedColor] = useState<string>('all')
+
+  useEffect(() => {
+    fetchNotebooksFromApi()
+  }, [fetchNotebooksFromApi])
 
   const filteredNotebooks = notebooks.filter((nb) => {
     const matchesSearch = nb.title.toLowerCase().includes(searchFilter.toLowerCase())
@@ -22,19 +27,30 @@ export function NotebooksPage() {
 
   const totalSourcesCount = notebooks.reduce((acc, nb) => acc + nb.sourceCount, 0)
 
-  const handleCreateNotebook = () => {
-    const newId = `nb-${Date.now()}`
-    const newNb = {
-      id: newId,
-      title: 'Untitled Notebook',
-      sourceCount: 0,
-      updatedAt: new Date(),
-      color: 'indigo' as NotebookColor,
-      icon: 'BookOpen',
+  const handleCreateNotebook = async () => {
+    try {
+      const created = await ApiService.createNotebook({
+        title: 'Untitled Notebook',
+        color: 'indigo',
+        icon: 'BookOpen',
+      })
+      addNotebook(created)
+      setActiveNotebook(created.id)
+      navigate(`/chat/${created.id}`)
+    } catch {
+      const localId = `nb-${Date.now()}`
+      const localNb = {
+        id: localId,
+        title: 'Untitled Notebook',
+        sourceCount: 0,
+        updatedAt: new Date(),
+        color: 'indigo' as NotebookColor,
+        icon: 'BookOpen',
+      }
+      addNotebook(localNb)
+      setActiveNotebook(localId)
+      navigate(`/chat/${localId}`)
     }
-    addNotebook(newNb)
-    setActiveNotebook(newId)
-    navigate(`/chat/${newId}`)
   }
 
   return (

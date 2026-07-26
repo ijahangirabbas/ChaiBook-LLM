@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { AppState, User, Message, Notebook, SidebarMode, Source, SourceIndexingStatus } from '../types'
-import { MOCK_NOTEBOOKS, MOCK_SOURCES, MOCK_MESSAGES } from '../lib/constants'
 import { ApiService } from '../services/api.service'
 
 export const useAppStore = create<AppState>()(
@@ -19,18 +18,17 @@ export const useAppStore = create<AppState>()(
       sidebarMode: 'dashboard',
 
       // ─── Notebooks ────────────────────────────────────────────────────
-      notebooks: MOCK_NOTEBOOKS,
+      notebooks: [],
       activeNotebookId: null,
 
       fetchNotebooksFromApi: async () => {
         const fetched = await ApiService.getNotebooks()
-        if (fetched && fetched.length > 0) {
-          set({ notebooks: fetched })
-        }
+        set({ notebooks: fetched })
       },
 
       // ─── Chat Sessions & Messages ──────────────────────────────────────
-      chatSessions: [
+      chatSessions: [],
+      /*
         {
           id: 'chat-sess-1',
           notebookId: 'nb-1',
@@ -69,13 +67,13 @@ export const useAppStore = create<AppState>()(
           updatedAt: new Date(Date.now() - 10800000),
           messages: [],
         },
-      ],
-      activeChatSessionId: 'chat-sess-1',
-      messages: MOCK_MESSAGES,
+      ],*/
+      activeChatSessionId: null,
+      messages: [],
       isStreaming: false,
 
       // ─── Sources ──────────────────────────────────────────────────────
-      sources: MOCK_SOURCES,
+      sources: [],
 
       // ─── Source Inspector ─────────────────────────────────────────────
       sourceInspectorOpen: false,
@@ -111,6 +109,9 @@ export const useAppStore = create<AppState>()(
           sourceInspectorOpen: false,
           addSourceModalOpen: false,
           sourcesModalOpen: false,
+          notebooks: [],
+          sources: [],
+          chatSessions: [],
         })
       },
 
@@ -276,10 +277,7 @@ export const useAppStore = create<AppState>()(
     {
       name: 'chaibook-storage',
       partialize: (state) => ({
-        isAuthenticated: state.isAuthenticated,
-        user: state.user,
         theme: state.theme,
-        notebooks: state.notebooks,
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.theme === 'dark') {

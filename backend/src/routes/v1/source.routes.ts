@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { sourceController } from '../../controllers/source.controller';
 import { uploadMiddleware } from '../../middlewares/upload.middleware';
+import { authenticateUser } from '../../middlewares/auth.middleware';
 
 const router = Router();
+router.use(authenticateUser);
 
 // Ingest Source into Notebook
 router.post(

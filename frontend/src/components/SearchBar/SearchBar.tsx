@@ -3,10 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Search, X, FileText, BookOpen, MessageCircle } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import { cn } from '../../lib/utils'
-import { MOCK_NOTEBOOKS } from '../../lib/constants'
 
 export function SearchBar() {
-  const { searchOpen, setSearchOpen, searchQuery, setSearchQuery } = useAppStore()
+  const { searchOpen, setSearchOpen, searchQuery, setSearchQuery, notebooks } = useAppStore()
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -16,7 +15,7 @@ export function SearchBar() {
   }, [searchOpen])
 
   const results = searchQuery
-    ? MOCK_NOTEBOOKS.filter((n) =>
+    ? notebooks.filter((n) =>
         n.title.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : []

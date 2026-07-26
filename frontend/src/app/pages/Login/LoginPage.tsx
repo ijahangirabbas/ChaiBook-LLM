@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
-import { Shield, MessageSquare, Database, Zap, FileText, FileCode, AlertCircle, Sparkles } from 'lucide-react'
-import { useAppStore } from '../../../store/useAppStore'
-import { MOCK_USER, AUTH_FEATURES } from '../../../lib/constants'
+import { Shield, MessageSquare, Database, Zap, FileText, FileCode, AlertCircle } from 'lucide-react'
+import { AUTH_FEATURES } from '../../../lib/constants'
 import { cn } from '../../../lib/utils'
 import { supabase, isSupabaseConfigured, getRedirectURL } from '../../../lib/supabase'
 
@@ -15,15 +13,8 @@ const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
 }
 
 export function LoginPage() {
-  const { login } = useAppStore()
-  const navigate = useNavigate()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [loadingProvider, setLoadingProvider] = useState<'google' | 'github' | null>(null)
-
-  const handleMockLogin = () => {
-    login(MOCK_USER)
-    navigate('/dashboard')
-  }
 
   const handleGoogleLogin = async () => {
     setErrorMsg(null)
@@ -298,27 +289,6 @@ export function LoginPage() {
               {loadingProvider === 'github' ? 'Connecting to GitHub...' : 'Continue with GitHub'}
             </motion.button>
 
-            {/* Demo / Guest Mode Button */}
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleMockLogin}
-              className={cn(
-                'w-full flex items-center justify-center gap-2 py-3 px-6 rounded-[20px]',
-                'border border-dashed border-primary/30 text-xs font-semibold text-primary',
-                'bg-primary/5 hover:bg-primary/10 transition-all duration-200'
-              )}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Explore in Guest Demo Mode
-            </motion.button>
-          </div>
-
-          {/* OR Divider */}
-          <div className="flex items-center gap-4 my-6">
-            <div className="flex-1 h-px bg-border dark:bg-border-dark" />
-            <span className="text-xs font-semibold text-text-muted dark:text-text-muted-dark uppercase tracking-widest">OR</span>
-            <div className="flex-1 h-px bg-border dark:bg-border-dark" />
           </div>
 
           {/* Terms & Privacy */}
@@ -331,10 +301,7 @@ export function LoginPage() {
 
           {/* Sign Up Link */}
           <p className="text-center text-sm text-text-secondary dark:text-text-secondary-dark font-medium">
-            New to ChaiBook LLM?{' '}
-            <button onClick={handleMockLogin} className="text-primary font-bold hover:underline">
-              Sign up
-            </button>
+            New to ChaiBook LLM? Continue with Google or GitHub to create your account.
           </p>
         </motion.div>
       </div>

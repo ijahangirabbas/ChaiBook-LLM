@@ -6,28 +6,77 @@ import { config } from '../config/env.config';
 import { RAG_SYSTEM_PROMPT } from '../constants/rag.constants';
 import { CitedSource } from '../types/chat.types';
 import { sendSSEEvent } from '../utils/sse.utils';
+import { prisma } from '../db/prisma.client';
+import { MessageRole } from '@prisma/client';
 
 export class RagService {
   async streamRAGResponse(
     query: string,
     notebookId: string,
-    res: Response
+    res: Response,
+    workspaceId = 'default',
+    conversationId?: string
   ): Promise<void> {
+    const startTime = Date.now();
+    let fullResponseText = '';
+
     try {
-      // Step 1: Retrieve top 5 matching chunks filtered by notebookId
-      const searchResults = await vectorService.searchWorkspace(query, notebookId, 5);
+      // Step 1: Ensure or create Conversation record in DB
+      let activeConversationId = conversationId;
+      try {
+        if (!activeConversationId) {
+          const conv = await prisma.conversation.create({
+            data: {
+              workspaceId,
+              notebookId,
+              title: query.slice(0, 40) || 'New Conversation',
+            },
+          });
+          activeConversationId = conv.id;
+        }
+
+        // Persist User Message
+        await prisma.message.create({
+          data: {
+            conversationId: activeConversationId,
+            role: MessageRole.USER,
+            content: query,
+          },
+        });
+      } catch {
+        // DB fallback if offline
+      }
+
+      sendSSEEvent(res, { type: 'message.started', conversationId: activeConversationId });
+
+      // Step 2: Retrieve matching vector chunks with workspace filter
+      const searchResults = await vectorService.searchWorkspace(query, notebookId, 5, workspaceId);
 
       if (searchResults.length === 0) {
-        sendSSEEvent(res, {
-          type: 'token',
-          content: 'I could not find any relevant information or sources in this notebook to answer your question.',
-        });
+        const fallbackText = 'I could not find any relevant information or sources in this notebook to answer your question.';
+        sendSSEEvent(res, { type: 'token', content: fallbackText });
+        sendSSEEvent(res, { type: 'token.delta', text: fallbackText });
         sendSSEEvent(res, { type: 'citations', sources: [] });
+        sendSSEEvent(res, { type: 'completed' });
         sendSSEEvent(res, { type: 'done' });
+
+        try {
+          if (activeConversationId) {
+            await prisma.message.create({
+              data: {
+                conversationId: activeConversationId,
+                role: MessageRole.ASSISTANT,
+                content: fallbackText,
+              },
+            });
+          }
+        } catch {
+          // Ignore DB save errors
+        }
         return;
       }
 
-      // Step 2: Format context text with explicit index tags [1], [2], etc.
+      // Step 3: Format context text with explicit index tags
       let formattedContext = '';
       const citedSources: CitedSource[] = [];
 
@@ -54,14 +103,13 @@ export class RagService {
         });
       });
 
-      // Step 3: Build Prompt Template
+      // Step 4: Build Prompt Template & Stream Tokens
       const promptTemplate = PromptTemplate.fromTemplate(RAG_SYSTEM_PROMPT);
       const formattedPrompt = await promptTemplate.format({
         context: formattedContext,
         question: query,
       });
 
-      // Step 4: Initialize ChatOpenAI with streaming
       const llm = new ChatOpenAI({
         openAIApiKey: config.openaiApiKey,
         modelName: config.chatModel,
@@ -69,24 +117,52 @@ export class RagService {
         streaming: true,
       });
 
-      // Step 5: Stream Tokens over SSE
       const stream = await llm.stream(formattedPrompt);
 
       for await (const chunk of stream) {
         const textToken = typeof chunk.content === 'string' ? chunk.content : String(chunk.content || '');
         if (textToken) {
+          fullResponseText += textToken;
           sendSSEEvent(res, { type: 'token', content: textToken });
+          sendSSEEvent(res, { type: 'token.delta', text: textToken });
         }
       }
 
-      // Step 6: Send Citations Payload for UI Drawer deep linking
+      // Step 5: Emit Citations
       sendSSEEvent(res, { type: 'citations', sources: citedSources });
 
-      // Step 7: Signal Completion
+      // Step 6: Persist Assistant Message & Generation stats in DB
+      try {
+        if (activeConversationId) {
+          const assistantMsg = await prisma.message.create({
+            data: {
+              conversationId: activeConversationId,
+              role: MessageRole.ASSISTANT,
+              content: fullResponseText,
+              sources: JSON.parse(JSON.stringify(citedSources)),
+            },
+          });
+
+          await prisma.generation.create({
+            data: {
+              messageId: assistantMsg.id,
+              model: config.chatModel,
+              promptTokens: formattedPrompt.length / 4,
+              completionTokens: fullResponseText.length / 4,
+              latencyMs: Date.now() - startTime,
+            },
+          });
+        }
+      } catch {
+        // Ignore DB save errors
+      }
+
+      sendSSEEvent(res, { type: 'completed', conversationId: activeConversationId });
       sendSSEEvent(res, { type: 'done' });
     } catch (error) {
       const errMsg = (error as Error).message || 'An error occurred during RAG generation.';
       console.error('❌ Error in RagService:', errMsg);
+      sendSSEEvent(res, { type: 'failed', error: errMsg });
       sendSSEEvent(res, { type: 'error', message: errMsg });
     }
   }

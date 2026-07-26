@@ -30,7 +30,7 @@ export function ChatPage() {
     activeChatSessionId,
   } = useAppStore()
 
-  const currentNotebookId = id || 'nb-1'
+  const currentNotebookId = id
 
   // Sync active notebook ID in store
   useEffect(() => {
@@ -39,13 +39,8 @@ export function ChatPage() {
     }
   }, [currentNotebookId, setActiveNotebook])
 
-  const currentNotebook = notebooks.find((n) => n.id === currentNotebookId) || {
-    id: currentNotebookId,
-    title: 'Untitled Notebook',
-    sourceCount: 0,
-    color: 'indigo' as const,
-    icon: 'BookOpen',
-  }
+  const currentNotebook = notebooks.find((n) => n.id === currentNotebookId)
+  const notebookTitle = currentNotebook?.title ?? ''
 
   const activeSession = chatSessions.find((s) => s.id === activeChatSessionId)
   const currentMessages = activeSession ? activeSession.messages : storeMessages
@@ -53,17 +48,21 @@ export function ChatPage() {
   const [showAllSources, setShowAllSources] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
-  const [titleInput, setTitleInput] = useState(currentNotebook.title)
+  const [titleInput, setTitleInput] = useState(notebookTitle)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setTitleInput(currentNotebook.title)
-  }, [currentNotebook.title])
+    setTitleInput(notebookTitle)
+  }, [notebookTitle])
 
   // Scroll to bottom on new message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [currentMessages])
+
+  if (!currentNotebookId || !currentNotebook) {
+    return <div className="p-8 text-sm text-text-muted">This notebook is unavailable. Return to your dashboard and select a notebook.</div>
+  }
 
   const handleTitleSubmit = () => {
     if (titleInput.trim()) {
@@ -100,7 +99,7 @@ export function ChatPage() {
         const aiMsg: Message = {
           id: aiMsgId,
           role: 'assistant',
-          content: accumulatedContent || `Based on your indexed sources in "${currentNotebook.title}", RAG retrieval combines your uploaded knowledge base with AI to answer accurately.`,
+          content: accumulatedContent || 'The response completed without content. Please try again.',
           timestamp: new Date(),
           sources: activeNotebookSources,
           isStreaming: false,
@@ -108,14 +107,11 @@ export function ChatPage() {
         addMessage(aiMsg)
         setIsStreaming(false)
       },
-      (_err) => {
-        if (!accumulatedContent) {
-          accumulatedContent = `Based on your indexed sources in "${currentNotebook.title}", RAG retrieval combines your uploaded knowledge base with AI to answer accurately.`
-        }
+      (error) => {
         const aiMsg: Message = {
           id: aiMsgId,
           role: 'assistant',
-          content: accumulatedContent,
+          content: accumulatedContent || `Unable to generate a response: ${error instanceof Error ? error.message : 'please try again.'}`,
           timestamp: new Date(),
           sources: activeNotebookSources,
           isStreaming: false,

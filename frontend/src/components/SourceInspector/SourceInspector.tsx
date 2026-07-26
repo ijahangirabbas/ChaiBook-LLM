@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, ChevronLeft, ChevronRight, ExternalLink, Copy, Check, Info, Play, FileText, Globe } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
-import { MOCK_SOURCES, SOURCE_TYPE_CONFIG } from '../../lib/constants'
+import { SOURCE_TYPE_CONFIG } from '../../lib/constants'
 import { SourceIcon } from '../SourceCard/SourceCard'
 import { cn } from '../../lib/utils'
 
@@ -25,7 +25,7 @@ export function SourceInspector() {
   const [copiedChunk, setCopiedChunk] = useState(false)
   const [selectedTimestamp, setSelectedTimestamp] = useState<number | null>(null)
 
-  const sources = storeSources.length > 0 ? storeSources : MOCK_SOURCES
+  const sources = storeSources
   const activeIndex = sources.findIndex((s) => s.id === activeSourceId)
   const source = activeIndex >= 0 ? sources[activeIndex] : null
 

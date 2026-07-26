@@ -33,32 +33,76 @@ enum MessageRole {
 }
 
 model User {
-  id         String     @id @default(uuid())
-  email      String     @unique
-  name       String
-  avatar     String?
-  provider   String     @default("google") // "google" | "github"
-  providerId String?
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  notebooks  Notebook[]
+  id              String        @id @default(uuid())
+  supabaseSubject String?       @unique
+  email           String        @unique
+  name            String
+  avatar          String?
+  provider        String        @default("google")
+  providerId      String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  memberships     Membership[]
+  settings        UserSettings?
 
   @@map("users")
 }
 
-model Notebook {
+model Workspace {
+  id            String         @id @default(uuid())
+  name          String
+  slug          String         @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  memberships   Membership[]
+  notebooks     Notebook[]
+  conversations Conversation[]
+  sources       Source[]
+
+  @@map("workspaces")
+}
+
+model Membership {
   id          String    @id @default(uuid())
-  title       String
-  color       String    @default("indigo")
-  icon        String    @default("book")
-  description String?
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sources     Source[]
-  messages    Message[]
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  role        String    @default("OWNER")
   createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
 
+  @@unique([userId, workspaceId])
+  @@map("memberships")
+}
+
+model UserSettings {
+  id                   String  @id @default(uuid())
+  userId               String  @unique
+  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme                String  @default("light")
+  notificationsEnabled Boolean @default(true)
+
+  @@map("user_settings")
+}
+
+model Notebook {
+  id            String         @id @default(uuid())
+  title         String
+  color         String         @default("indigo")
+  icon          String         @default("book")
+  description   String?
+  workspaceId   String
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId        String
+  archivedAt    DateTime?
+  favoritedAt   DateTime?
+  deletedAt     DateTime?
+  sources       Source[]
+  conversations Conversation[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([workspaceId, updatedAt])
   @@map("notebooks")
 }
 
@@ -66,30 +110,111 @@ model Source {
   id               String         @id @default(uuid())
   notebookId       String
   notebook         Notebook       @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+  workspaceId      String
+  workspace        Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   type             SourceType
   title            String
   url              String?
   s3Key            String?
-  domain           String?
+  contentType      String?
+  sizeBytes        Int?
+  checksum         String?
   status           IndexingStatus @default(UPLOADING)
+  stage            String         @default("queued")
   indexingProgress Int            @default(0)
   errorMessage     String?
   pageCount        Int?
   durationSeconds  Int?
+  deletedAt        DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
+  jobs             IngestionJob[]
 
+  @@index([workspaceId, notebookId])
   @@map("sources")
 }
 
+model IngestionJob {
+  id            String           @id @default(uuid())
+  sourceId      String
+  source        Source           @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  status        String           @default("queued")
+  stage         String           @default("queued")
+  progress      Int              @default(0)
+  failureCode   String?
+  failureDetail String?
+  attempts      Int              @default(0)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  events        IngestionEvent[]
+
+  @@map("ingestion_jobs")
+}
+
+model IngestionEvent {
+  id        String       @id @default(uuid())
+  jobId     String
+  job       IngestionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  stage     String
+  message   String
+  createdAt DateTime     @default(now())
+
+  @@map("ingestion_events")
+}
+
+model Conversation {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  notebookId  String
+  notebook    Notebook  @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+  title       String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  messages    Message[]
+
+  @@index([workspaceId, notebookId])
+  @@map("conversations")
+}
+
 model Message {
-  id         String      @id @default(uuid())
-  notebookId String
-  notebook   Notebook    @relation(fields: [notebookId], references: [id], onDelete: Cascade)
-  role       MessageRole
-  content    String
-  sources    Json?       // Stores inline citations array
-  createdAt  DateTime    @default(now())
+  id             String            @id @default(uuid())
+  conversationId String
+  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  content        String
+  sources        Json?
+  citations      MessageCitation[]
+  generations    Generation[]
+  createdAt      DateTime          @default(now())
 
   @@map("messages")
+}
+
+model MessageCitation {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  sourceId  String?
+  chunkId   String?
+  title     String
+  snippet   String
+  page      Int?
+  score     Float?
+  createdAt DateTime @default(now())
+
+  @@map("message_citations")
+}
+
+model Generation {
+  id               String   @id @default(uuid())
+  messageId        String
+  message          Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  model            String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  latencyMs        Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  @@map("generations")
 }

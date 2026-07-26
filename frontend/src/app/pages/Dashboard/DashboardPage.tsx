@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, Shield, Zap, BookOpen, Lock } from 'lucide-react'
+import { ArrowRight, Shield, Zap, BookOpen, Lock, Plus } from 'lucide-react'
 import { Header } from '../../../components/Header/Header'
 import { HeroBanner } from '../../../components/HeroBanner/HeroBanner'
 import { ChatInput } from '../../../components/ChatInput/ChatInput'
@@ -9,6 +9,7 @@ import { QuickActionCard } from '../../../components/QuickActionCard/QuickAction
 import { NotebookCard } from '../../../components/NotebookCard/NotebookCard'
 import { QUICK_ACTIONS, PRODUCT_FEATURES } from '../../../lib/constants'
 import { useAppStore } from '../../../store/useAppStore'
+import { ApiService } from '../../../services/api.service'
 import type { Notebook } from '../../../types'
 import { cn } from '../../../lib/utils'
 
@@ -34,16 +35,69 @@ export function DashboardPage() {
     fetchNotebooksFromApi()
   }, [fetchNotebooksFromApi])
 
-  const handleChatInput = (_message: string) => {
-    const defaultNbId = notebooks[0]?.id || 'nb-1'
-    setActiveNotebook(defaultNbId)
-    navigate(`/chat/${defaultNbId}`)
+  const ensureNotebook = async (): Promise<string> => {
+    if (notebooks.length > 0 && notebooks[0].id) {
+      return notebooks[0].id
+    }
+    try {
+      const created = await ApiService.createNotebook({
+        title: 'New AI Research Notebook',
+        color: 'indigo',
+        icon: 'BookOpen',
+      })
+      addNotebook(created)
+      return created.id
+    } catch {
+      const localId = `nb-${Date.now()}`
+      const localNb: Notebook = {
+        id: localId,
+        title: 'New AI Research Notebook',
+        sourceCount: 0,
+        updatedAt: new Date(),
+        color: 'indigo',
+        icon: 'BookOpen',
+      }
+      addNotebook(localNb)
+      return localId
+    }
   }
 
-  const handleQuickAction = (_prompt: string) => {
-    const defaultNbId = notebooks[0]?.id || 'nb-1'
-    setActiveNotebook(defaultNbId)
-    navigate(`/chat/${defaultNbId}`)
+  const handleChatInput = async (_message: string) => {
+    const targetId = await ensureNotebook()
+    setActiveNotebook(targetId)
+    navigate(`/chat/${targetId}`)
+  }
+
+  const handleQuickAction = async (_prompt: string) => {
+    const targetId = await ensureNotebook()
+    setActiveNotebook(targetId)
+    navigate(`/chat/${targetId}`)
+  }
+
+  const handleCreateNotebookClick = async () => {
+    try {
+      const created = await ApiService.createNotebook({
+        title: 'Untitled Notebook',
+        color: 'indigo',
+        icon: 'BookOpen',
+      })
+      addNotebook(created)
+      setActiveNotebook(created.id)
+      navigate(`/chat/${created.id}`)
+    } catch {
+      const localId = `nb-${Date.now()}`
+      const localNb: Notebook = {
+        id: localId,
+        title: 'Untitled Notebook',
+        sourceCount: 0,
+        updatedAt: new Date(),
+        color: 'indigo',
+        icon: 'BookOpen',
+      }
+      addNotebook(localNb)
+      setActiveNotebook(localId)
+      navigate(`/chat/${localId}`)
+    }
   }
 
   return (
@@ -111,23 +165,10 @@ export function DashboardPage() {
               </h2>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => {
-                    const newId = `nb-${Date.now()}`
-                    const newNb = {
-                      id: newId,
-                      title: 'Untitled Notebook',
-                      sourceCount: 0,
-                      updatedAt: new Date(),
-                      color: 'indigo' as const,
-                      icon: 'BookOpen',
-                    }
-                    addNotebook(newNb)
-                    setActiveNotebook(newId)
-                    navigate(`/chat/${newId}`)
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
+                  onClick={handleCreateNotebookClick}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors flex items-center gap-1"
                 >
-                  + New Notebook
+                  <Plus className="w-3.5 h-3.5" /> New Notebook
                 </button>
                 <motion.button
                   whileHover={{ x: 2 }}
@@ -139,24 +180,44 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {notebooks.map((notebook: Notebook, index: number) => (
-                <motion.div
-                  key={notebook.id}
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.25 + index * 0.06 }}
+            {notebooks.length === 0 ? (
+              <div className="p-8 rounded-card border border-dashed border-border dark:border-border-dark text-center bg-card/50 dark:bg-card-dark/50">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3 text-primary text-xl">
+                  📚
+                </div>
+                <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-1">
+                  No Notebooks Created Yet
+                </h3>
+                <p className="text-xs text-text-muted dark:text-text-muted-dark mb-4 max-w-sm mx-auto">
+                  Create your first notebook to organize sources and start asking grounded AI questions.
+                </p>
+                <button
+                  onClick={handleCreateNotebookClick}
+                  className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors shadow-sm inline-flex items-center gap-1.5"
                 >
-                  <NotebookCard
-                    notebook={notebook}
-                    onClick={() => {
-                      setActiveNotebook(notebook.id)
-                      navigate(`/chat/${notebook.id}`)
-                    }}
-                  />
-                </motion.div>
-              ))}
-            </div>
+                  <Plus className="w-4 h-4" /> Create Notebook
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {notebooks.map((notebook: Notebook, index: number) => (
+                  <motion.div
+                    key={notebook.id}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25 + index * 0.06 }}
+                  >
+                    <NotebookCard
+                      notebook={notebook}
+                      onClick={() => {
+                        setActiveNotebook(notebook.id)
+                        navigate(`/chat/${notebook.id}`)
+                      }}
+                    />
+                  </motion.div>
+                ))}
+              </div>
+            )}
           </motion.section>
 
           {/* Why users love ChaiBook LLM */}

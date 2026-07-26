@@ -1,10 +1,23 @@
 import { CitedSource } from './chat.types';
 
-export type SSEEventType = 'token' | 'citations' | 'done' | 'error';
+export type SSEEventType =
+  | 'token'
+  | 'token.delta'
+  | 'citations'
+  | 'done'
+  | 'error'
+  | 'message.started'
+  | 'completed'
+  | 'failed';
 
 export interface SSETokenPayload {
   type: 'token';
   content: string;
+}
+
+export interface SSETokenDeltaPayload {
+  type: 'token.delta';
+  text: string;
 }
 
 export interface SSECitationsPayload {
@@ -21,4 +34,27 @@ export interface SSEErrorPayload {
   message: string;
 }
 
-export type SSEPayload = SSETokenPayload | SSECitationsPayload | SSEDonePayload | SSEErrorPayload;
+export interface SSEMessageStartedPayload {
+  type: 'message.started';
+  conversationId?: string;
+}
+
+export interface SSECompletedPayload {
+  type: 'completed';
+  conversationId?: string;
+}
+
+export interface SSEFailedPayload {
+  type: 'failed';
+  error: string;
+}
+
+export type SSEPayload =
+  | SSETokenPayload
+  | SSETokenDeltaPayload
+  | SSECitationsPayload
+  | SSEDonePayload
+  | SSEErrorPayload
+  | SSEMessageStartedPayload
+  | SSECompletedPayload
+  | SSEFailedPayload;

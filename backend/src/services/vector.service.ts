@@ -12,9 +12,10 @@ export class VectorService {
   async searchWorkspace(
     query: string,
     notebookId: string,
-    limit = 5
+    limit = 5,
+    workspaceId?: string
   ): Promise<VectorSearchResult[]> {
-    return await this.vectorStore.similaritySearch(query, notebookId, limit);
+    return await this.vectorStore.similaritySearch(query, notebookId, limit, workspaceId);
   }
 
   async deleteSourceVectors(sourceId: string): Promise<void> {

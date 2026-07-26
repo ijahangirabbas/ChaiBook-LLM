@@ -1,11 +1,13 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { notebookService } from '../services/notebook.service';
+import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 
 export class NotebookController {
   // GET /api/v1/notebooks
-  async getNotebooks(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async getNotebooks(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const notebooks = await notebookService.getAllNotebooks();
+      const workspaceId = req.user?.workspaceId || 'default';
+      const notebooks = await notebookService.getAllNotebooks(workspaceId);
       res.status(200).json({
         success: true,
         data: notebooks,
@@ -16,10 +18,11 @@ export class NotebookController {
   }
 
   // GET /api/v1/notebooks/:id
-  async getNotebookById(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async getNotebookById(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const notebook = await notebookService.getNotebookById(id);
+      const workspaceId = req.user?.workspaceId || 'default';
+      const notebook = await notebookService.getNotebookById(id, workspaceId);
 
       if (!notebook) {
         res.status(404).json({
@@ -29,7 +32,7 @@ export class NotebookController {
         return;
       }
 
-      const sources = await notebookService.getSourcesForNotebook(id);
+      const sources = await notebookService.getSourcesForNotebook(id, workspaceId);
 
       res.status(200).json({
         success: true,
@@ -44,10 +47,20 @@ export class NotebookController {
   }
 
   // POST /api/v1/notebooks
-  async createNotebook(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async createNotebook(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { title, description, color, icon } = req.body;
-      const newNotebook = await notebookService.createNotebook({ title, description, color, icon });
+      const workspaceId = req.user?.workspaceId || 'default';
+      const userId = req.user?.id || 'default-user';
+
+      const newNotebook = await notebookService.createNotebook({
+        title,
+        description,
+        color,
+        icon,
+        workspaceId,
+        userId,
+      });
 
       res.status(201).json({
         success: true,
@@ -59,11 +72,21 @@ export class NotebookController {
   }
 
   // PATCH /api/v1/notebooks/:id
-  async updateNotebook(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async updateNotebook(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
+      const workspaceId = req.user?.workspaceId || 'default';
       const { title, description, color, icon } = req.body;
-      const updated = await notebookService.updateNotebook(id, { title, description, color, icon });
+
+      const updated = await notebookService.updateNotebook(id, workspaceId, { title, description, color, icon });
+
+      if (!updated) {
+        res.status(404).json({
+          success: false,
+          message: `Notebook with ID "${id}" not found.`,
+        });
+        return;
+      }
 
       res.status(200).json({
         success: true,
@@ -75,10 +98,19 @@ export class NotebookController {
   }
 
   // DELETE /api/v1/notebooks/:id
-  async deleteNotebook(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async deleteNotebook(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      await notebookService.deleteNotebook(id);
+      const workspaceId = req.user?.workspaceId || 'default';
+      const deleted = await notebookService.deleteNotebook(id, workspaceId);
+
+      if (!deleted) {
+        res.status(404).json({
+          success: false,
+          message: `Notebook with ID "${id}" not found or already deleted.`,
+        });
+        return;
+      }
 
       res.status(200).json({
         success: true,
@@ -90,10 +122,11 @@ export class NotebookController {
   }
 
   // GET /api/v1/notebooks/:id/sources
-  async getNotebookSources(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async getNotebookSources(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const sources = await notebookService.getSourcesForNotebook(id);
+      const workspaceId = req.user?.workspaceId || 'default';
+      const sources = await notebookService.getSourcesForNotebook(id, workspaceId);
 
       res.status(200).json({
         success: true,

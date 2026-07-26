@@ -25,7 +25,7 @@ export function AddSourceModal() {
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const currentNotebookId = activeNotebookId || notebooks[0]?.id || 'nb-1'
+  const currentNotebookId = activeNotebookId || notebooks[0]?.id
 
   const handleClose = () => {
     setAddSourceModalOpen(false)
@@ -56,17 +56,14 @@ export function AddSourceModal() {
   }
 
   const handleSubmit = async () => {
-    if (!selectedType) return
+    if (!selectedType || !currentNotebookId) return
     setIsSubmitting(true)
-
-    const sourceId = `src-${Date.now()}`
-    const title = uploadedFileName || urlInput || (selectedType === 'pdf' ? 'lldm.pdf' : 'Untitled Source')
 
     try {
       if (selectedFile) {
         const res = await ApiService.uploadSourceFile(currentNotebookId, selectedFile)
         addSource({
-          id: res.sourceId || sourceId,
+          id: res.sourceId,
           notebookId: currentNotebookId,
           type: selectedType,
           title: selectedFile.name,
@@ -82,7 +79,7 @@ export function AddSourceModal() {
           selectedType === 'youtube' ? 'youtube' : 'webpage'
         )
         addSource({
-          id: res.sourceId || sourceId,
+          id: res.sourceId,
           notebookId: currentNotebookId,
           type: selectedType,
           title: urlInput,
@@ -93,34 +90,11 @@ export function AddSourceModal() {
           indexingProgress: 25,
         })
       } else {
-        // Text paste or local fallback
-        addSource({
-          id: sourceId,
-          notebookId: currentNotebookId,
-          type: selectedType,
-          title,
-          domain: 'Uploaded by you',
-          number: Math.floor(Math.random() * 10) + 1,
-          status: 'indexing',
-          indexingProgress: 40,
-        })
+        throw new Error('Choose a file or provide a supported URL before adding a source.')
       }
-
-      // Simulate completion to green dot
-      setTimeout(() => {
-        useAppStore.getState().updateSourceStatus(sourceId, 'ready', 100)
-      }, 3500)
-    } catch (_err) {
-      addSource({
-        id: sourceId,
-        notebookId: currentNotebookId,
-        type: selectedType,
-        title,
-        domain: 'Local upload',
-        number: Math.floor(Math.random() * 10) + 1,
-        status: 'ready',
-        indexingProgress: 100,
-      })
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to add this source.')
+      return
     } finally {
       setIsSubmitting(false)
       handleClose()

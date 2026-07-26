@@ -7,6 +7,6 @@ export interface VectorSearchResult {
 
 export interface IVectorStore {
   upsertDocuments(documents: Document[]): Promise<void>;
-  similaritySearch(query: string, notebookId: string, limit?: number): Promise<VectorSearchResult[]>;
+  similaritySearch(query: string, notebookId: string, limit?: number, workspaceId?: string): Promise<VectorSearchResult[]>;
   deleteBySourceId(sourceId: string): Promise<void>;
 }

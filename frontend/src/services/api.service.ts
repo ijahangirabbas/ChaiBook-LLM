@@ -1,66 +1,66 @@
 import type { Notebook, SourceIndexingStatus } from '../types';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
 
 export class ApiService {
+  private static async headers(json = false): Promise<HeadersInit> {
+    let token: string | undefined = undefined;
+
+    if (isSupabaseConfigured && supabase) {
+      const result = await supabase.auth.getSession();
+      token = result?.data?.session?.access_token;
+    }
+
+    const bearerToken = token || 'dev-token';
+
+    return {
+      ...(json ? { 'Content-Type': 'application/json' } : {}),
+      Authorization: `Bearer ${bearerToken}`,
+    };
+  }
+
   // ─── Notebook Endpoints ──────────────────────────────────────────────────
   static async getNotebooks(): Promise<Notebook[]> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/notebooks`);
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const json = await res.json();
-      return json.data.map((nb: any) => ({
-        id: nb.id,
-        title: nb.title,
-        description: nb.description,
-        sourceCount: nb.sourceCount || 0,
-        updatedAt: new Date(nb.updatedAt),
-        color: nb.color || 'indigo',
-        icon: nb.icon || 'BookOpen',
-      }));
-    } catch (err) {
-      console.warn('API connection offline, using fallback state:', err);
-      return [];
-    }
+    const res = await fetch(`${API_BASE_URL}/notebooks`, { headers: await this.headers() });
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const json = await res.json();
+    return (json.data || []).map((nb: any) => ({
+      id: nb.id,
+      title: nb.title,
+      description: nb.description,
+      sourceCount: nb.sourceCount || 0,
+      updatedAt: new Date(nb.updatedAt),
+      color: nb.color || 'indigo',
+      icon: nb.icon || 'BookOpen',
+    }));
   }
 
   static async createNotebook(data: { title: string; description?: string; color?: string; icon?: string }): Promise<Notebook> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/notebooks`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      const json = await res.json();
-      const nb = json.data;
-      return {
-        id: nb.id,
-        title: nb.title,
-        description: nb.description,
-        sourceCount: 0,
-        updatedAt: new Date(nb.updatedAt),
-        color: nb.color || 'indigo',
-        icon: nb.icon || 'BookOpen',
-      };
-    } catch (err) {
-      const fallbackId = `nb-${Date.now()}`;
-      return {
-        id: fallbackId,
-        title: data.title || 'Untitled Notebook',
-        description: data.description,
-        sourceCount: 0,
-        updatedAt: new Date(),
-        color: (data.color as any) || 'indigo',
-        icon: data.icon || 'BookOpen',
-      };
-    }
+    const res = await fetch(`${API_BASE_URL}/notebooks`, {
+      method: 'POST',
+      headers: await this.headers(true),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Unable to create this notebook.');
+    const json = await res.json();
+    const nb = json.data;
+    return {
+      id: nb.id,
+      title: nb.title,
+      description: nb.description,
+      sourceCount: 0,
+      updatedAt: new Date(nb.updatedAt),
+      color: nb.color || 'indigo',
+      icon: nb.icon || 'BookOpen',
+    };
   }
 
   static async updateNotebook(id: string, data: { title?: string; description?: string }): Promise<void> {
     try {
       await fetch(`${API_BASE_URL}/notebooks/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await this.headers(true),
         body: JSON.stringify(data),
       });
     } catch (err) {
@@ -70,7 +70,8 @@ export class ApiService {
 
   static async deleteNotebook(id: string): Promise<void> {
     try {
-      await fetch(`${API_BASE_URL}/notebooks/${id}`, { method: 'DELETE' });
+      const response = await fetch(`${API_BASE_URL}/notebooks/${id}`, { method: 'DELETE', headers: await this.headers() });
+      if (!response.ok) throw new Error('Unable to delete this notebook.');
     } catch (err) {
       console.warn('Failed to delete notebook remotely:', err);
     }
@@ -83,6 +84,7 @@ export class ApiService {
 
     const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/sources`, {
       method: 'POST',
+      headers: await this.headers(),
       body: formData,
     });
     if (!res.ok) throw new Error('File upload failed');
@@ -96,7 +98,7 @@ export class ApiService {
   static async addSourceUrl(notebookId: string, url: string, type: 'youtube' | 'webpage'): Promise<{ sourceId: string; status: SourceIndexingStatus }> {
     const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/sources`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await this.headers(true),
       body: JSON.stringify({ url, type }),
     });
     if (!res.ok) throw new Error('URL source creation failed');
@@ -108,7 +110,7 @@ export class ApiService {
   }
 
   static async fetchSourceStatus(sourceId: string): Promise<{ status: SourceIndexingStatus; progress: number; errorMessage?: string }> {
-    const res = await fetch(`${API_BASE_URL}/sources/${sourceId}/status`);
+    const res = await fetch(`${API_BASE_URL}/sources/${sourceId}/status`, { headers: await this.headers() });
     if (!res.ok) throw new Error('Source status fetch failed');
     const json = await res.json();
     return {
@@ -119,11 +121,11 @@ export class ApiService {
   }
 
   static async reindexSource(sourceId: string): Promise<void> {
-    await fetch(`${API_BASE_URL}/sources/${sourceId}/reindex`, { method: 'POST' });
+    await fetch(`${API_BASE_URL}/sources/${sourceId}/reindex`, { method: 'POST', headers: await this.headers() });
   }
 
   static async deleteSource(sourceId: string): Promise<void> {
-    await fetch(`${API_BASE_URL}/sources/${sourceId}`, { method: 'DELETE' });
+    await fetch(`${API_BASE_URL}/sources/${sourceId}`, { method: 'DELETE', headers: await this.headers() });
   }
 
   // ─── SSE RAG Chat Endpoint ───────────────────────────────────────────────
@@ -137,7 +139,7 @@ export class ApiService {
     try {
       const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await this.headers(true),
         body: JSON.stringify({ message }),
       });
 
@@ -169,13 +171,16 @@ export class ApiService {
             }
             try {
               const parsed = JSON.parse(dataStr);
-              if (parsed.token) {
-                onChunk(parsed.token);
-              } else if (parsed.content) {
-                onChunk(parsed.content);
+              if (parsed.type === 'completed' || parsed.type === 'done') {
+                onComplete();
+                return;
+              } else if (parsed.type === 'failed' || parsed.type === 'error') {
+                onError(new Error(parsed.error || parsed.message || 'Stream failed'));
+                return;
+              } else if (parsed.token || parsed.content || parsed.text) {
+                onChunk(parsed.token || parsed.content || parsed.text);
               }
             } catch {
-              // Direct string token fallback
               onChunk(dataStr);
             }
           }

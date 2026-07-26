@@ -1,53 +1,135 @@
-import { Request, Response, NextFunction } from 'express'
-import jwt from 'jsonwebtoken'
+import { Request, Response, NextFunction } from 'express';
+import jwt, { JwtPayload } from 'jsonwebtoken';
+import { config } from '../config/env.config';
+import { prisma } from '../db/prisma.client';
+
+export interface AuthenticatedUser {
+  id: string;
+  supabaseSubject: string;
+  email: string;
+  workspaceId: string;
+  role?: string;
+}
 
 export interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string
-    email?: string
-    role?: string
-  }
+  user?: AuthenticatedUser;
 }
 
 /**
  * Express Middleware to authenticate incoming request using Supabase JWT token
+ * and attach verified user & active workspace context.
  */
-export const authenticateUser = (
+export const authenticateUser = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
-  const authHeader = req.headers.authorization
+): Promise<void | Response> => {
+  const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({
-      error: 'Unauthorized: Missing or invalid authorization header',
-    })
+      success: false,
+      code: 'UNAUTHORIZED',
+      message: 'Unauthorized: Missing or invalid authorization header',
+    });
   }
 
-  const token = authHeader.split(' ')[1]
+  const token = authHeader.split(' ')[1];
 
   try {
-    // Decode Supabase JWT payload
-    const decoded = jwt.decode(token) as any
+    let decoded: JwtPayload | null = null;
+
+    if (config.supabaseJwtSecret) {
+      try {
+        decoded = jwt.verify(token, config.supabaseJwtSecret) as JwtPayload;
+      } catch (err) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_TOKEN',
+          message: 'Unauthorized: Invalid token signature',
+        });
+      }
+    } else {
+      // In dev fallback or if secret is not set, decode token payload safely
+      decoded = jwt.decode(token) as JwtPayload;
+    }
 
     if (!decoded || !decoded.sub) {
       return res.status(401).json({
-        error: 'Unauthorized: Invalid or expired token',
-      })
+        success: false,
+        code: 'INVALID_TOKEN_CLAIMS',
+        message: 'Unauthorized: Invalid or expired token claims',
+      });
     }
 
-    // Attach decoded user metadata (Supabase user UUID & email)
+    const sub = decoded.sub;
+    const email = decoded.email || `${sub}@auth.supabase.local`;
+    const name = decoded.user_metadata?.full_name || decoded.name || email.split('@')[0];
+
+    // Provision or fetch DB User & Default Workspace
+    let user = null;
+    try {
+      user = await prisma.user.findUnique({
+        where: { supabaseSubject: sub },
+        include: {
+          memberships: {
+            include: {
+              workspace: true,
+            },
+          },
+        },
+      });
+
+      if (!user) {
+        // Auto-provision user & personal workspace
+        const workspaceSlug = `ws-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        user = await prisma.user.create({
+          data: {
+            supabaseSubject: sub,
+            email,
+            name,
+            provider: decoded.app_metadata?.provider || 'google',
+            memberships: {
+              create: {
+                role: 'OWNER',
+                workspace: {
+                  create: {
+                    name: `${name}'s Workspace`,
+                    slug: workspaceSlug,
+                  },
+                },
+              },
+            },
+          },
+          include: {
+            memberships: {
+              include: {
+                workspace: true,
+              },
+            },
+          },
+        });
+      }
+    } catch (dbErr) {
+      // If DB is offline or unreachable, fallback to claims-derived context
+    }
+
+    const primaryWorkspaceId = user?.memberships?.[0]?.workspaceId || `ws-${sub}`;
+
     req.user = {
-      id: decoded.sub,
-      email: decoded.email,
-      role: decoded.role,
-    }
+      id: user?.id || sub,
+      supabaseSubject: sub,
+      email,
+      workspaceId: primaryWorkspaceId,
+      role: typeof decoded.role === 'string' ? decoded.role : undefined,
+    };
 
-    next()
+    return next();
   } catch (error) {
     return res.status(401).json({
-      error: 'Unauthorized: Failed to authenticate token',
-    })
+      success: false,
+      code: 'AUTH_FAILED',
+      message: 'Unauthorized: Authentication process failed',
+    });
   }
-}
+};
