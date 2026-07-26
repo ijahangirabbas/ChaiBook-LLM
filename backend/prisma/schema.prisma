@@ -1,0 +1,95 @@
+// Prisma Schema for PostgreSQL
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum SourceType {
+  YOUTUBE
+  PDF
+  WEBPAGE
+  TEXT
+  MARKDOWN
+  WORD
+  POWERPOINT
+  SRT
+  VTT
+}
+
+enum IndexingStatus {
+  UPLOADING
+  INDEXING
+  READY
+  ERROR
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+model User {
+  id         String     @id @default(uuid())
+  email      String     @unique
+  name       String
+  avatar     String?
+  provider   String     @default("google") // "google" | "github"
+  providerId String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  notebooks  Notebook[]
+
+  @@map("users")
+}
+
+model Notebook {
+  id          String    @id @default(uuid())
+  title       String
+  color       String    @default("indigo")
+  icon        String    @default("book")
+  description String?
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sources     Source[]
+  messages    Message[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("notebooks")
+}
+
+model Source {
+  id               String         @id @default(uuid())
+  notebookId       String
+  notebook         Notebook       @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+  type             SourceType
+  title            String
+  url              String?
+  s3Key            String?
+  domain           String?
+  status           IndexingStatus @default(UPLOADING)
+  indexingProgress Int            @default(0)
+  errorMessage     String?
+  pageCount        Int?
+  durationSeconds  Int?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@map("sources")
+}
+
+model Message {
+  id         String      @id @default(uuid())
+  notebookId String
+  notebook   Notebook    @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+  role       MessageRole
+  content    String
+  sources    Json?       // Stores inline citations array
+  createdAt  DateTime    @default(now())
+
+  @@map("messages")
+}
