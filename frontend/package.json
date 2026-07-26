@@ -18,6 +18,7 @@
     "@radix-ui/react-separator": "^1.1.15",
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
+    "@supabase/supabase-js": "^2.110.8",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.26.0",

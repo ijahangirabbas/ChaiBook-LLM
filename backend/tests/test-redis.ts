@@ -9,13 +9,19 @@ export async function testRedis(): Promise<boolean> {
   console.log('⚡ 5. Testing Redis & BullMQ Task Queue...');
   console.log('========================================');
 
-  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  const rawRedisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  const isUpstash = rawRedisUrl.includes('upstash.io');
+  const redisUrl = isUpstash && rawRedisUrl.startsWith('redis://')
+    ? rawRedisUrl.replace('redis://', 'rediss://')
+    : rawRedisUrl;
+
   console.log(`🔹 Connecting to Redis at: ${redisUrl}...`);
 
   const redis = new IORedis(redisUrl, {
     maxRetriesPerRequest: null,
-    connectTimeout: 5000,
+    connectTimeout: 8000,
     lazyConnect: true,
+    tls: isUpstash || redisUrl.startsWith('rediss://') ? {} : undefined,
   });
 
   try {
@@ -34,7 +40,16 @@ export async function testRedis(): Promise<boolean> {
     console.log('🔹 Testing BullMQ background job queue...');
     const queueName = `test-queue-${Date.now()}`;
 
-    const testQueue = new Queue(queueName, { connection: redis });
+    const connectionOpts = {
+      host: redis.options.host,
+      port: redis.options.port,
+      password: redis.options.password,
+      username: redis.options.username,
+      tls: isUpstash || redisUrl.startsWith('rediss://') ? {} : undefined,
+      maxRetriesPerRequest: null,
+    };
+
+    const testQueue = new Queue(queueName, { connection: connectionOpts });
 
     let jobProcessed = false;
     const testWorker = new Worker(
@@ -43,7 +58,7 @@ export async function testRedis(): Promise<boolean> {
         console.log(`✅ BullMQ Worker picked up Job ID: ${job.id} with payload: "${job.data.task}"`);
         jobProcessed = true;
       },
-      { connection: redis }
+      { connection: connectionOpts }
     );
 
     const job = await testQueue.add('test-job', { task: 'Ingest PDF document chunk' });

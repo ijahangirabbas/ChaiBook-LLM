@@ -7,7 +7,6 @@ import { ChatInput } from '../../../components/ChatInput/ChatInput'
 import { MessageBubble } from '../../../components/MessageBubble/MessageBubble'
 import { SourceCard } from '../../../components/SourceCard/SourceCard'
 import { useAppStore } from '../../../store/useAppStore'
-import { MOCK_MESSAGES } from '../../../lib/constants'
 import { generateId } from '../../../lib/utils'
 import type { Message } from '../../../types'
 import { ApiService } from '../../../services/api.service'
@@ -19,11 +18,16 @@ export function ChatPage() {
   const {
     notebooks,
     sources,
+    messages: storeMessages,
+    addMessage,
     updateNotebookTitle,
     openSourceInspector,
     sourceInspectorOpen,
     setSourcesModalOpen,
+    setAddSourceModalOpen,
     setActiveNotebook,
+    chatSessions,
+    activeChatSessionId,
   } = useAppStore()
 
   const currentNotebookId = id || 'nb-1'
@@ -37,13 +41,15 @@ export function ChatPage() {
 
   const currentNotebook = notebooks.find((n) => n.id === currentNotebookId) || {
     id: currentNotebookId,
-    title: 'Machine Learning Notes',
-    sourceCount: 4,
+    title: 'Untitled Notebook',
+    sourceCount: 0,
     color: 'indigo' as const,
     icon: 'BookOpen',
   }
 
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES)
+  const activeSession = chatSessions.find((s) => s.id === activeChatSessionId)
+  const currentMessages = activeSession ? activeSession.messages : storeMessages
+
   const [showAllSources, setShowAllSources] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
@@ -57,7 +63,7 @@ export function ChatPage() {
   // Scroll to bottom on new message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [currentMessages])
 
   const handleTitleSubmit = () => {
     if (titleInput.trim()) {
@@ -74,25 +80,13 @@ export function ChatPage() {
       content,
       timestamp: new Date(),
     }
-    setMessages((prev) => [...prev, userMsg])
+    addMessage(userMsg)
     setIsStreaming(true)
 
     const aiMsgId = generateId()
     const activeNotebookSources = sources.filter(
       (s) => !s.notebookId || s.notebookId === currentNotebookId
     )
-
-    // Initial empty assistant message
-    const initialAiMsg: Message = {
-      id: aiMsgId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date(),
-      sources: activeNotebookSources,
-      isStreaming: true,
-    }
-
-    setMessages((prev) => [...prev, initialAiMsg])
 
     let accumulatedContent = ''
 
@@ -101,30 +95,32 @@ export function ChatPage() {
       content,
       (token) => {
         accumulatedContent += token
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === aiMsgId ? { ...msg, content: accumulatedContent } : msg
-          )
-        )
       },
       () => {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === aiMsgId ? { ...msg, isStreaming: false } : msg
-          )
-        )
+        const aiMsg: Message = {
+          id: aiMsgId,
+          role: 'assistant',
+          content: accumulatedContent || `Based on your indexed sources in "${currentNotebook.title}", RAG retrieval combines your uploaded knowledge base with AI to answer accurately.`,
+          timestamp: new Date(),
+          sources: activeNotebookSources,
+          isStreaming: false,
+        }
+        addMessage(aiMsg)
         setIsStreaming(false)
       },
       (_err) => {
-        // Fallback response if offline or backend processing
         if (!accumulatedContent) {
           accumulatedContent = `Based on your indexed sources in "${currentNotebook.title}", RAG retrieval combines your uploaded knowledge base with AI to answer accurately.`
         }
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === aiMsgId ? { ...msg, content: accumulatedContent, isStreaming: false } : msg
-          )
-        )
+        const aiMsg: Message = {
+          id: aiMsgId,
+          role: 'assistant',
+          content: accumulatedContent,
+          timestamp: new Date(),
+          sources: activeNotebookSources,
+          isStreaming: false,
+        }
+        addMessage(aiMsg)
         setIsStreaming(false)
       }
     )
@@ -202,75 +198,109 @@ export function ChatPage() {
         )}>
           {/* Messages scroll area */}
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-            <AnimatePresence>
-              {messages.map((message) => (
-                <div key={message.id}>
-                  <MessageBubble
-                    message={message}
-                    onRegenerate={() => {}}
-                  />
+            {currentMessages.length === 0 ? (
+              <div className="flex-1 h-full flex flex-col items-center justify-center text-center py-16">
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className="flex flex-col items-center max-w-sm"
+                >
+                  <motion.div
+                    animate={{ y: [0, -6, 0] }}
+                    transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                    className={cn(
+                      'w-20 h-20 rounded-2xl mb-5 flex items-center justify-center',
+                      'bg-primary/10 border-2 border-dashed border-primary/30 text-primary'
+                    )}
+                  >
+                    <span className="text-4xl">☕</span>
+                  </motion.div>
+                  <h2 className="text-lg font-bold text-text-primary dark:text-text-primary-dark mb-1.5">
+                    Start a new conversation
+                  </h2>
+                  <p className="text-xs text-text-muted dark:text-text-muted-dark mb-6 leading-relaxed">
+                    Ask questions grounded in your uploaded documents or click below to add your first source.
+                  </p>
+                  <button
+                    onClick={() => setAddSourceModalOpen(true)}
+                    className="px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors shadow-sm"
+                  >
+                    + Add Source
+                  </button>
+                </motion.div>
+              </div>
+            ) : (
+              <AnimatePresence>
+                {currentMessages.map((message) => (
+                  <div key={message.id}>
+                    <MessageBubble
+                      message={message}
+                      onRegenerate={() => {}}
+                    />
 
-                  {/* Sources below AI messages */}
-                  {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.2 }}
-                      className="mt-4 ml-11"
-                    >
-                      {/* Sources header */}
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
-                          Sources
-                        </span>
-                        <button
-                          className="text-text-muted dark:text-text-muted-dark hover:text-primary transition-colors"
-                          aria-label="Sources information"
-                        >
-                          <Info className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                    {/* Sources below AI messages */}
+                    {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="mt-4 ml-11"
+                      >
+                        {/* Sources header */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
+                            Sources
+                          </span>
+                          <button
+                            className="text-text-muted dark:text-text-muted-dark hover:text-primary transition-colors"
+                            aria-label="Sources information"
+                          >
+                            <Info className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
 
-                      {/* Horizontal source cards */}
-                      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                        {(showAllSources ? message.sources : message.sources.slice(0, 4)).map((source) => (
-                          <SourceCard
-                            key={source.id}
-                            source={source}
-                            onClick={() => openSourceInspector(source.id)}
-                            isActive={useAppStore.getState().activeSourceId === source.id}
-                          />
-                        ))}
-                      </div>
+                        {/* Horizontal source cards */}
+                        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                          {(showAllSources ? message.sources : message.sources.slice(0, 4)).map((source) => (
+                            <SourceCard
+                              key={source.id}
+                              source={source}
+                              onClick={() => openSourceInspector(source.id)}
+                              isActive={useAppStore.getState().activeSourceId === source.id}
+                            />
+                          ))}
+                        </div>
 
-                      {/* Show more / less */}
-                      {message.sources.length > 4 && (
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => setShowAllSources(!showAllSources)}
-                          className={cn(
-                            'mt-3 flex items-center gap-2 px-4 py-2 rounded-full',
-                            'border border-border dark:border-border-dark',
-                            'bg-card dark:bg-card-dark',
-                            'text-xs font-semibold text-text-secondary dark:text-text-secondary-dark',
-                            'hover:border-primary/30 hover:text-primary transition-all duration-150'
-                          )}
-                          aria-expanded={showAllSources}
-                          aria-label={showAllSources ? 'Show fewer sources' : 'Show more sources'}
-                        >
-                          {showAllSources ? (
-                            <>Show less <ChevronUp className="w-3.5 h-3.5" /></>
-                          ) : (
-                            <>Show more sources <ChevronDown className="w-3.5 h-3.5" /></>
-                          )}
-                        </motion.button>
-                      )}
-                    </motion.div>
-                  )}
-                </div>
-              ))}
-            </AnimatePresence>
+                        {/* Show more / less */}
+                        {message.sources.length > 4 && (
+                          <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => setShowAllSources(!showAllSources)}
+                            className={cn(
+                              'mt-3 flex items-center gap-2 px-4 py-2 rounded-full',
+                              'border border-border dark:border-border-dark',
+                              'bg-card dark:bg-card-dark',
+                              'text-xs font-semibold text-text-secondary dark:text-text-secondary-dark',
+                              'hover:border-primary/30 hover:text-primary transition-all duration-150'
+                            )}
+                            aria-expanded={showAllSources}
+                            aria-label={showAllSources ? 'Show fewer sources' : 'Show more sources'}
+                          >
+                            {showAllSources ? (
+                              <>Show less <ChevronUp className="w-3.5 h-3.5" /></>
+                            ) : (
+                              <>Show more sources <ChevronDown className="w-3.5 h-3.5" /></>
+                            )}
+                          </motion.button>
+                        )}
+                      </motion.div>
+                    )}
+                  </div>
+                ))}
+              </AnimatePresence>
+            )}
 
             {/* Streaming indicator */}
             {isStreaming && (

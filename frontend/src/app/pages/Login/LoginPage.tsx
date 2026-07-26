@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Shield, MessageSquare, Database, Zap, FileText, FileCode } from 'lucide-react'
+import { Shield, MessageSquare, Database, Zap, FileText, FileCode, AlertCircle, Sparkles } from 'lucide-react'
 import { useAppStore } from '../../../store/useAppStore'
 import { MOCK_USER, AUTH_FEATURES } from '../../../lib/constants'
 import { cn } from '../../../lib/utils'
+import { supabase, isSupabaseConfigured, getRedirectURL } from '../../../lib/supabase'
 
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Shield,
@@ -15,10 +17,62 @@ const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
 export function LoginPage() {
   const { login } = useAppStore()
   const navigate = useNavigate()
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [loadingProvider, setLoadingProvider] = useState<'google' | 'github' | null>(null)
 
   const handleMockLogin = () => {
     login(MOCK_USER)
     navigate('/dashboard')
+  }
+
+  const handleGoogleLogin = async () => {
+    setErrorMsg(null)
+    if (!isSupabaseConfigured || !supabase) {
+      setErrorMsg('Supabase credentials are missing or unconfigured. Please set valid VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY in your environment.')
+      return
+    }
+
+    try {
+      setLoadingProvider('google')
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${getRedirectURL()}/dashboard`,
+        },
+      })
+      if (error) {
+        setErrorMsg(`Google Auth Error: ${error.message}`)
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to connect to Google OAuth')
+    } finally {
+      setLoadingProvider(null)
+    }
+  }
+
+  const handleGithubLogin = async () => {
+    setErrorMsg(null)
+    if (!isSupabaseConfigured || !supabase) {
+      setErrorMsg('Supabase credentials are missing or unconfigured. Please set valid VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY in your environment.')
+      return
+    }
+
+    try {
+      setLoadingProvider('github')
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: `${getRedirectURL()}/dashboard`,
+        },
+      })
+      if (error) {
+        setErrorMsg(`GitHub Auth Error: ${error.message}`)
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to connect to GitHub OAuth')
+    } finally {
+      setLoadingProvider(null)
+    }
   }
 
   return (
@@ -185,19 +239,32 @@ export function LoginPage() {
             </p>
           </div>
 
+          {/* Error Banner */}
+          {errorMsg && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-600 dark:text-red-400 text-xs font-medium"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </motion.div>
+          )}
+
           {/* OAuth Buttons */}
-          <div className="space-y-4 mb-6">
+          <div className="space-y-3 mb-6">
             {/* Google Button */}
             <motion.button
               whileHover={{ y: -2, boxShadow: '0 8px 24px rgba(0,0,0,0.06)' }}
               whileTap={{ scale: 0.98 }}
-              onClick={handleMockLogin}
+              onClick={handleGoogleLogin}
+              disabled={loadingProvider !== null}
               className={cn(
                 'w-full flex items-center justify-center gap-3.5 py-3.5 px-6 rounded-[20px]',
                 'border border-border dark:border-border-dark',
                 'bg-white dark:bg-white/5 text-base font-semibold text-text-primary dark:text-text-primary-dark',
                 'hover:border-primary/40 hover:bg-gray-50/80 dark:hover:bg-white/10',
-                'transition-all duration-200 shadow-sm'
+                'transition-all duration-200 shadow-sm disabled:opacity-50'
               )}
               aria-label="Continue with Google"
             >
@@ -207,27 +274,43 @@ export function LoginPage() {
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
-              Continue with Google
+              {loadingProvider === 'google' ? 'Connecting to Google...' : 'Continue with Google'}
             </motion.button>
 
             {/* GitHub Button */}
             <motion.button
               whileHover={{ y: -2, boxShadow: '0 8px 24px rgba(0,0,0,0.06)' }}
               whileTap={{ scale: 0.98 }}
-              onClick={handleMockLogin}
+              onClick={handleGithubLogin}
+              disabled={loadingProvider !== null}
               className={cn(
                 'w-full flex items-center justify-center gap-3.5 py-3.5 px-6 rounded-[20px]',
                 'border border-border dark:border-border-dark',
                 'bg-white dark:bg-white/5 text-base font-semibold text-text-primary dark:text-text-primary-dark',
                 'hover:border-primary/40 hover:bg-gray-50/80 dark:hover:bg-white/10',
-                'transition-all duration-200 shadow-sm'
+                'transition-all duration-200 shadow-sm disabled:opacity-50'
               )}
               aria-label="Continue with GitHub"
             >
               <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" fill="currentColor" aria-hidden="true">
                 <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
               </svg>
-              Continue with GitHub
+              {loadingProvider === 'github' ? 'Connecting to GitHub...' : 'Continue with GitHub'}
+            </motion.button>
+
+            {/* Demo / Guest Mode Button */}
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleMockLogin}
+              className={cn(
+                'w-full flex items-center justify-center gap-2 py-3 px-6 rounded-[20px]',
+                'border border-dashed border-primary/30 text-xs font-semibold text-primary',
+                'bg-primary/5 hover:bg-primary/10 transition-all duration-200'
+              )}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Explore in Guest Demo Mode
             </motion.button>
           </div>
 
@@ -249,7 +332,9 @@ export function LoginPage() {
           {/* Sign Up Link */}
           <p className="text-center text-sm text-text-secondary dark:text-text-secondary-dark font-medium">
             New to ChaiBook LLM?{' '}
-            <a href="#" className="text-primary font-bold hover:underline">Sign up</a>
+            <button onClick={handleMockLogin} className="text-primary font-bold hover:underline">
+              Sign up
+            </button>
           </p>
         </motion.div>
       </div>

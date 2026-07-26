@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowRight, Shield, Zap, BookOpen, Lock } from 'lucide-react'
@@ -27,7 +28,11 @@ const FEATURE_COLORS = [
 
 export function DashboardPage() {
   const navigate = useNavigate()
-  const { notebooks, setActiveNotebook, addNotebook } = useAppStore()
+  const { notebooks, setActiveNotebook, addNotebook, fetchNotebooksFromApi } = useAppStore()
+
+  useEffect(() => {
+    fetchNotebooksFromApi()
+  }, [fetchNotebooksFromApi])
 
   const handleChatInput = (_message: string) => {
     const defaultNbId = notebooks[0]?.id || 'nb-1'

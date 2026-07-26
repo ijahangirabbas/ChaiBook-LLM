@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { AppState, User, Message, Notebook, SidebarMode, Source, SourceIndexingStatus } from '../types'
-import { MOCK_NOTEBOOKS, MOCK_SOURCES } from '../lib/constants'
+import { MOCK_NOTEBOOKS, MOCK_SOURCES, MOCK_MESSAGES } from '../lib/constants'
+import { ApiService } from '../services/api.service'
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -21,8 +22,56 @@ export const useAppStore = create<AppState>()(
       notebooks: MOCK_NOTEBOOKS,
       activeNotebookId: null,
 
-      // ─── Chat ─────────────────────────────────────────────────────────
-      messages: [],
+      fetchNotebooksFromApi: async () => {
+        const fetched = await ApiService.getNotebooks()
+        if (fetched && fetched.length > 0) {
+          set({ notebooks: fetched })
+        }
+      },
+
+      // ─── Chat Sessions & Messages ──────────────────────────────────────
+      chatSessions: [
+        {
+          id: 'chat-sess-1',
+          notebookId: 'nb-1',
+          title: 'Chat 1: RAG Architecture',
+          createdAt: new Date(Date.now() - 3600000),
+          updatedAt: new Date(Date.now() - 3600000),
+          messages: MOCK_MESSAGES,
+        },
+        {
+          id: 'chat-sess-2',
+          notebookId: 'nb-1',
+          title: 'Chat 2: Model Embeddings',
+          createdAt: new Date(Date.now() - 7200000),
+          updatedAt: new Date(Date.now() - 7200000),
+          messages: [
+            {
+              id: 'msg-emb-1',
+              role: 'user',
+              content: 'Explain vector embeddings in Machine Learning.',
+              timestamp: new Date(Date.now() - 7200000),
+            },
+            {
+              id: 'msg-emb-2',
+              role: 'assistant',
+              content: 'Vector embeddings map high-dimensional text or media objects into dense numerical vectors in a continuous vector space, preserving semantic relationships.',
+              timestamp: new Date(Date.now() - 7100000),
+              sources: MOCK_SOURCES,
+            },
+          ],
+        },
+        {
+          id: 'chat-sess-3',
+          notebookId: 'nb-1',
+          title: 'Chat 3: Fine-Tuning Guide',
+          createdAt: new Date(Date.now() - 10800000),
+          updatedAt: new Date(Date.now() - 10800000),
+          messages: [],
+        },
+      ],
+      activeChatSessionId: 'chat-sess-1',
+      messages: MOCK_MESSAGES,
       isStreaming: false,
 
       // ─── Sources ──────────────────────────────────────────────────────
@@ -58,6 +107,7 @@ export const useAppStore = create<AppState>()(
           user: null,
           messages: [],
           activeNotebookId: null,
+          activeChatSessionId: null,
           sourceInspectorOpen: false,
           addSourceModalOpen: false,
           sourcesModalOpen: false,
@@ -78,10 +128,98 @@ export const useAppStore = create<AppState>()(
 
       setSidebarMode: (mode: SidebarMode) => set({ sidebarMode: mode }),
 
-      setActiveNotebook: (id: string | null) => set({ activeNotebookId: id }),
+      setActiveNotebook: (id: string | null) => {
+        const state = get()
+        // Find existing or first session for this notebook
+        const sessions = state.chatSessions.filter((s) => s.notebookId === id)
+        if (sessions.length > 0) {
+          set({
+            activeNotebookId: id,
+            activeChatSessionId: sessions[0].id,
+            messages: sessions[0].messages,
+          })
+        } else if (id) {
+          // Auto-create initial session if none exists
+          const newSessId = `chat-sess-${Date.now()}`
+          const newSession = {
+            id: newSessId,
+            notebookId: id,
+            title: `Chat 1: Overview`,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            messages: [],
+          }
+          set({
+            activeNotebookId: id,
+            activeChatSessionId: newSessId,
+            chatSessions: [newSession, ...state.chatSessions],
+            messages: [],
+          })
+        } else {
+          set({ activeNotebookId: null, activeChatSessionId: null, messages: [] })
+        }
+      },
 
-      addMessage: (message: Message) =>
-        set((state) => ({ messages: [...state.messages, message] })),
+      createChatSession: (notebookId: string, title?: string) => {
+        const state = get()
+        const notebookSessions = state.chatSessions.filter((s) => s.notebookId === notebookId)
+        const nextNum = notebookSessions.length + 1
+        const newSessId = `chat-sess-${Date.now()}`
+        const newSession = {
+          id: newSessId,
+          notebookId,
+          title: title || `Chat ${nextNum}: Discussion`,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          messages: [],
+        }
+        set({
+          chatSessions: [newSession, ...state.chatSessions],
+          activeChatSessionId: newSessId,
+          messages: [],
+        })
+        return newSessId
+      },
+
+      switchChatSession: (sessionId: string) => {
+        const state = get()
+        const targetSession = state.chatSessions.find((s) => s.id === sessionId)
+        if (targetSession) {
+          set({
+            activeChatSessionId: sessionId,
+            activeNotebookId: targetSession.notebookId,
+            messages: targetSession.messages,
+          })
+        }
+      },
+
+      deleteChatSession: (sessionId: string) => {
+        set((state) => {
+          const updated = state.chatSessions.filter((s) => s.id !== sessionId)
+          const activeSess = updated[0] ? updated[0].id : null
+          const activeMsgs = updated[0] ? updated[0].messages : []
+          return {
+            chatSessions: updated,
+            activeChatSessionId: activeSess,
+            messages: activeMsgs,
+          }
+        })
+      },
+
+      addMessage: (message: Message) => {
+        set((state) => {
+          const activeSessId = state.activeChatSessionId
+          const updatedSessions = state.chatSessions.map((sess) =>
+            sess.id === activeSessId
+              ? { ...sess, messages: [...sess.messages, message], updatedAt: new Date() }
+              : sess
+          )
+          return {
+            messages: [...state.messages, message],
+            chatSessions: updatedSessions,
+          }
+        })
+      },
 
       setStreaming: (streaming: boolean) => set({ isStreaming: streaming }),
 

@@ -2,13 +2,18 @@ import { Queue, Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { sourceService, ProcessSourceParams } from '../services/source.service';
 
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const rawRedisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const isUpstash = rawRedisUrl.includes('upstash.io');
+const redisUrl = isUpstash && rawRedisUrl.startsWith('redis://')
+  ? rawRedisUrl.replace('redis://', 'rediss://')
+  : rawRedisUrl;
 
 export const redisConnection = new IORedis(redisUrl, {
   maxRetriesPerRequest: null,
   lazyConnect: true,
+  tls: isUpstash || redisUrl.startsWith('rediss://') ? {} : undefined,
   retryStrategy: (times) => {
-    if (times > 3) return null; // Stop retrying after 3 attempts if Redis is offline
+    if (times > 3) return null;
     return Math.min(times * 500, 2000);
   },
 });

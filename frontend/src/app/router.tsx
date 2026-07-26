@@ -7,6 +7,7 @@ import { useAppStore } from '../store/useAppStore'
 // Lazy-loaded pages
 const LoginPage = lazy(() => import('./pages/Login/LoginPage').then(m => ({ default: m.LoginPage })))
 const DashboardPage = lazy(() => import('./pages/Dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })))
+const NotebooksPage = lazy(() => import('./pages/Notebooks/NotebooksPage').then(m => ({ default: m.NotebooksPage })))
 const NotebookPage = lazy(() => import('./pages/Notebook/NotebookPage').then(m => ({ default: m.NotebookPage })))
 const ChatPage = lazy(() => import('./pages/Chat/ChatPage').then(m => ({ default: m.ChatPage })))
 
@@ -82,7 +83,7 @@ const router = createBrowserRouter([
         path: '/notebooks',
         element: (
           <Suspense fallback={<PageLoader />}>
-            <DashboardPage />
+            <NotebooksPage />
           </Suspense>
         ),
       },

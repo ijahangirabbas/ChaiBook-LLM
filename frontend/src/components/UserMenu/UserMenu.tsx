@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../../store/useAppStore'
 import { cn } from '../../lib/utils'
 
+import { supabase, isSupabaseConfigured } from '../../lib/supabase'
+
 export function UserMenu() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -21,7 +23,10 @@ export function UserMenu() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (supabase && isSupabaseConfigured) {
+      await supabase.auth.signOut()
+    }
     logout()
     navigate('/')
   }

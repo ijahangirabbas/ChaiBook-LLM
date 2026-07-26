@@ -55,6 +55,15 @@ export interface Message {
   isStreaming?: boolean
 }
 
+export interface ChatSession {
+  id: string
+  notebookId: string
+  title: string
+  createdAt: Date
+  updatedAt: Date
+  messages: Message[]
+}
+
 // ─── Notebook Types ───────────────────────────────────────────────────────────
 
 export type NotebookColor = 'indigo' | 'green' | 'blue' | 'orange' | 'purple' | 'pink' | 'teal'
@@ -139,6 +148,10 @@ export interface AppState {
   notebooks: Notebook[]
   activeNotebookId: string | null
 
+  // Chat Sessions
+  chatSessions: ChatSession[]
+  activeChatSessionId: string | null
+
   // Chat
   messages: Message[]
   isStreaming: boolean
@@ -167,6 +180,10 @@ export interface AppState {
   setSidebarOpen: (open: boolean) => void
   setSidebarMode: (mode: SidebarMode) => void
   setActiveNotebook: (id: string | null) => void
+  fetchNotebooksFromApi: () => Promise<void>
+  createChatSession: (notebookId: string, title?: string) => string
+  switchChatSession: (sessionId: string) => void
+  deleteChatSession: (sessionId: string) => void
   addMessage: (message: Message) => void
   setStreaming: (streaming: boolean) => void
   openSourceInspector: (sourceId: string) => void
