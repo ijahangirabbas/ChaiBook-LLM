@@ -6,14 +6,14 @@ import { Header } from '../../../components/Header/Header'
 import { NotebookCard } from '../../../components/NotebookCard/NotebookCard'
 import { useAppStore } from '../../../store/useAppStore'
 import { ApiService } from '../../../services/api.service'
-import type { NotebookColor } from '../../../types'
 import { cn } from '../../../lib/utils'
 
 export function NotebooksPage() {
   const navigate = useNavigate()
-  const { notebooks, setActiveNotebook, addNotebook, fetchNotebooksFromApi } = useAppStore()
+  const { notebooks, loadingNotebooks, notebooksError, setActiveNotebook, addNotebook, fetchNotebooksFromApi } = useAppStore()
   const [searchFilter, setSearchFilter] = useState('')
   const [selectedColor, setSelectedColor] = useState<string>('all')
+  const [createError, setCreateError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchNotebooksFromApi()
@@ -29,6 +29,7 @@ export function NotebooksPage() {
 
   const handleCreateNotebook = async () => {
     try {
+      setCreateError(null)
       const created = await ApiService.createNotebook({
         title: 'Untitled Notebook',
         color: 'indigo',
@@ -37,19 +38,8 @@ export function NotebooksPage() {
       addNotebook(created)
       setActiveNotebook(created.id)
       navigate(`/chat/${created.id}`)
-    } catch {
-      const localId = `nb-${Date.now()}`
-      const localNb = {
-        id: localId,
-        title: 'Untitled Notebook',
-        sourceCount: 0,
-        updatedAt: new Date(),
-        color: 'indigo' as NotebookColor,
-        icon: 'BookOpen',
-      }
-      addNotebook(localNb)
-      setActiveNotebook(localId)
-      navigate(`/chat/${localId}`)
+    } catch (err: any) {
+      setCreateError(err?.message || 'Unable to create notebook on server. Please try again.')
     }
   }
 
@@ -115,6 +105,19 @@ export function NotebooksPage() {
             </div>
           </motion.div>
 
+          {/* Error Banner */}
+          {(notebooksError || createError) && (
+            <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-between text-xs font-medium">
+              <span>{notebooksError || createError}</span>
+              <button
+                onClick={() => fetchNotebooksFromApi()}
+                className="px-3 py-1 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* Search Bar & Color Filters */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
             {/* Search Input */}
@@ -154,7 +157,13 @@ export function NotebooksPage() {
           </div>
 
           {/* Notebook Grid */}
-          {filteredNotebooks.length === 0 ? (
+          {loadingNotebooks ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-36 rounded-card bg-card/60 dark:bg-card-dark/60 animate-pulse border border-border/50" />
+              ))}
+            </div>
+          ) : filteredNotebooks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center border-2 border-dashed border-border dark:border-border-dark rounded-3xl">
               <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-primary mb-4">
                 <Folder className="w-8 h-8" />

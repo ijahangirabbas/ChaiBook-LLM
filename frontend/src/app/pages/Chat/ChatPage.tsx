@@ -17,6 +17,7 @@ export function ChatPage() {
   const navigate = useNavigate()
   const {
     notebooks,
+    loadingNotebooks,
     sources,
     messages: storeMessages,
     addMessage,
@@ -41,21 +42,8 @@ export function ChatPage() {
     fetchNotebooksFromApi()
   }, [currentNotebookId, setActiveNotebook, fetchNotebooksFromApi])
 
-  let currentNotebook = notebooks.find((n) => n.id === currentNotebookId)
-
-  // Fallback notebook object if page was refreshed directly
-  if (!currentNotebook && currentNotebookId) {
-    currentNotebook = {
-      id: currentNotebookId,
-      title: 'Active Research Notebook',
-      sourceCount: sources.filter(s => s.notebookId === currentNotebookId).length,
-      updatedAt: new Date(),
-      color: 'indigo',
-      icon: 'BookOpen',
-    }
-  }
-
-  const notebookTitle = currentNotebook?.title ?? 'Active Research Notebook'
+  const currentNotebook = notebooks.find((n) => n.id === currentNotebookId)
+  const notebookTitle = currentNotebook?.title ?? 'Research Notebook'
 
   const activeSession = chatSessions.find((s) => s.id === activeChatSessionId)
   const currentMessages = activeSession ? activeSession.messages : storeMessages
@@ -77,6 +65,33 @@ export function ChatPage() {
 
   if (!currentNotebookId) {
     return <div className="p-8 text-sm text-text-muted">This notebook is unavailable. Return to your dashboard and select a notebook.</div>
+  }
+
+  if (loadingNotebooks) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center bg-bg dark:bg-bg-dark">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-3" />
+        <span className="text-xs text-text-muted">Loading workspace notebook...</span>
+      </div>
+    )
+  }
+
+  if (!currentNotebook) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center bg-bg dark:bg-bg-dark p-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center text-2xl mb-3">
+          ⚠️
+        </div>
+        <h2 className="text-base font-bold text-text-primary dark:text-text-primary-dark mb-1">Notebook Not Found</h2>
+        <p className="text-xs text-text-muted mb-4">The requested notebook could not be found or you do not have permission to view it.</p>
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary/90 transition-colors"
+        >
+          Return to Dashboard
+        </button>
+      </div>
+    )
   }
 
   const handleTitleSubmit = () => {

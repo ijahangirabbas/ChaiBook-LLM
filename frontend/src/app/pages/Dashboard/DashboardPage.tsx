@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowRight, Shield, Zap, BookOpen, Lock, Plus } from 'lucide-react'
@@ -29,17 +29,19 @@ const FEATURE_COLORS = [
 
 export function DashboardPage() {
   const navigate = useNavigate()
-  const { notebooks, setActiveNotebook, addNotebook, fetchNotebooksFromApi } = useAppStore()
+  const { notebooks, loadingNotebooks, notebooksError, setActiveNotebook, addNotebook, fetchNotebooksFromApi } = useAppStore()
+  const [createError, setCreateError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchNotebooksFromApi()
   }, [fetchNotebooksFromApi])
 
-  const ensureNotebook = async (): Promise<string> => {
+  const ensureNotebook = async (): Promise<string | null> => {
     if (notebooks.length > 0 && notebooks[0].id) {
       return notebooks[0].id
     }
     try {
+      setCreateError(null)
       const created = await ApiService.createNotebook({
         title: 'New AI Research Notebook',
         color: 'indigo',
@@ -47,35 +49,31 @@ export function DashboardPage() {
       })
       addNotebook(created)
       return created.id
-    } catch {
-      const localId = `nb-${Date.now()}`
-      const localNb: Notebook = {
-        id: localId,
-        title: 'New AI Research Notebook',
-        sourceCount: 0,
-        updatedAt: new Date(),
-        color: 'indigo',
-        icon: 'BookOpen',
-      }
-      addNotebook(localNb)
-      return localId
+    } catch (err: any) {
+      setCreateError(err?.message || 'Failed to create notebook on server.')
+      return null
     }
   }
 
   const handleChatInput = async (_message: string) => {
     const targetId = await ensureNotebook()
-    setActiveNotebook(targetId)
-    navigate(`/chat/${targetId}`)
+    if (targetId) {
+      setActiveNotebook(targetId)
+      navigate(`/chat/${targetId}`)
+    }
   }
 
   const handleQuickAction = async (_prompt: string) => {
     const targetId = await ensureNotebook()
-    setActiveNotebook(targetId)
-    navigate(`/chat/${targetId}`)
+    if (targetId) {
+      setActiveNotebook(targetId)
+      navigate(`/chat/${targetId}`)
+    }
   }
 
   const handleCreateNotebookClick = async () => {
     try {
+      setCreateError(null)
       const created = await ApiService.createNotebook({
         title: 'Untitled Notebook',
         color: 'indigo',
@@ -84,19 +82,8 @@ export function DashboardPage() {
       addNotebook(created)
       setActiveNotebook(created.id)
       navigate(`/chat/${created.id}`)
-    } catch {
-      const localId = `nb-${Date.now()}`
-      const localNb: Notebook = {
-        id: localId,
-        title: 'Untitled Notebook',
-        sourceCount: 0,
-        updatedAt: new Date(),
-        color: 'indigo',
-        icon: 'BookOpen',
-      }
-      addNotebook(localNb)
-      setActiveNotebook(localId)
-      navigate(`/chat/${localId}`)
+    } catch (err: any) {
+      setCreateError(err?.message || 'Unable to create notebook on server. Please try again.')
     }
   }
 
@@ -116,6 +103,19 @@ export function DashboardPage() {
           >
             <HeroBanner />
           </motion.div>
+
+          {/* Create or Fetch Error Banner */}
+          {(notebooksError || createError) && (
+            <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-between text-xs font-medium">
+              <span>{notebooksError || createError}</span>
+              <button
+                onClick={() => fetchNotebooksFromApi()}
+                className="px-3 py-1 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
           {/* Single Chat Input */}
           <motion.div
@@ -180,7 +180,13 @@ export function DashboardPage() {
               </div>
             </div>
 
-            {notebooks.length === 0 ? (
+            {loadingNotebooks ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-36 rounded-card bg-card/60 dark:bg-card-dark/60 animate-pulse border border-border/50" />
+                ))}
+              </div>
+            ) : notebooks.length === 0 ? (
               <div className="p-8 rounded-card border border-dashed border-border dark:border-border-dark text-center bg-card/50 dark:bg-card-dark/50">
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3 text-primary text-xl">
                   📚

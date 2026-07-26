@@ -82,24 +82,32 @@ export function UserMenu() {
             </div>
 
             {/* Menu items */}
-            <div className="p-1.5">
+            <div className="p-1.5 space-y-0.5">
               {[
-                { icon: User, label: 'Profile', onClick: () => setOpen(false) },
-                { icon: Settings, label: 'Settings', onClick: () => setOpen(false) },
+                { icon: User, label: 'Profile', onClick: () => alert('Profile & Account settings will be fully manageable in Phase 5.') },
+                { icon: Settings, label: 'Settings', onClick: () => alert('Settings & workspace configuration will be fully manageable in Phase 5.') },
               ].map((item) => (
                 <button
                   key={item.label}
-                  onClick={item.onClick}
+                  onClick={() => {
+                    setOpen(false)
+                    item.onClick()
+                  }}
                   role="menuitem"
                   className={cn(
-                    'w-full flex items-center gap-3 px-3 py-2 rounded-sidebar-item text-sm',
+                    'w-full flex items-center justify-between px-3 py-2 rounded-sidebar-item text-sm',
                     'text-text-secondary dark:text-text-secondary-dark',
                     'hover:bg-primary/5 hover:text-primary dark:hover:bg-primary/10',
                     'transition-colors duration-150'
                   )}
                 >
-                  <item.icon className="w-4 h-4" />
-                  {item.label}
+                  <div className="flex items-center gap-3">
+                    <item.icon className="w-4 h-4" />
+                    {item.label}
+                  </div>
+                  <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-semibold">
+                    Phase 5
+                  </span>
                 </button>
               ))}
             </div>

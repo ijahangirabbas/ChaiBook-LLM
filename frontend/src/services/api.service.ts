@@ -57,23 +57,20 @@ export class ApiService {
   }
 
   static async updateNotebook(id: string, data: { title?: string; description?: string }): Promise<void> {
-    try {
-      await fetch(`${API_BASE_URL}/notebooks/${id}`, {
-        method: 'PATCH',
-        headers: await this.headers(true),
-        body: JSON.stringify(data),
-      });
-    } catch (err) {
-      console.warn('Failed to update notebook remotely:', err);
+    const res = await fetch(`${API_BASE_URL}/notebooks/${id}`, {
+      method: 'PATCH',
+      headers: await this.headers(true),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update notebook (status: ${res.status})`);
     }
   }
 
   static async deleteNotebook(id: string): Promise<void> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/notebooks/${id}`, { method: 'DELETE', headers: await this.headers() });
-      if (!response.ok) throw new Error('Unable to delete this notebook.');
-    } catch (err) {
-      console.warn('Failed to delete notebook remotely:', err);
+    const response = await fetch(`${API_BASE_URL}/notebooks/${id}`, { method: 'DELETE', headers: await this.headers() });
+    if (!response.ok) {
+      throw new Error(`Failed to delete notebook (status: ${response.status})`);
     }
   }
 

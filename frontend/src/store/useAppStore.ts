@@ -20,54 +20,24 @@ export const useAppStore = create<AppState>()(
       // ─── Notebooks ────────────────────────────────────────────────────
       notebooks: [],
       activeNotebookId: null,
+      loadingNotebooks: false,
+      notebooksError: null,
 
       fetchNotebooksFromApi: async () => {
-        const fetched = await ApiService.getNotebooks()
-        set({ notebooks: fetched })
+        set({ loadingNotebooks: true, notebooksError: null })
+        try {
+          const fetched = await ApiService.getNotebooks()
+          set({ notebooks: fetched, loadingNotebooks: false })
+        } catch (err: any) {
+          set({
+            notebooksError: err?.message || 'Unable to connect to server and load notebooks.',
+            loadingNotebooks: false,
+          })
+        }
       },
 
       // ─── Chat Sessions & Messages ──────────────────────────────────────
       chatSessions: [],
-      /*
-        {
-          id: 'chat-sess-1',
-          notebookId: 'nb-1',
-          title: 'Chat 1: RAG Architecture',
-          createdAt: new Date(Date.now() - 3600000),
-          updatedAt: new Date(Date.now() - 3600000),
-          messages: MOCK_MESSAGES,
-        },
-        {
-          id: 'chat-sess-2',
-          notebookId: 'nb-1',
-          title: 'Chat 2: Model Embeddings',
-          createdAt: new Date(Date.now() - 7200000),
-          updatedAt: new Date(Date.now() - 7200000),
-          messages: [
-            {
-              id: 'msg-emb-1',
-              role: 'user',
-              content: 'Explain vector embeddings in Machine Learning.',
-              timestamp: new Date(Date.now() - 7200000),
-            },
-            {
-              id: 'msg-emb-2',
-              role: 'assistant',
-              content: 'Vector embeddings map high-dimensional text or media objects into dense numerical vectors in a continuous vector space, preserving semantic relationships.',
-              timestamp: new Date(Date.now() - 7100000),
-              sources: MOCK_SOURCES,
-            },
-          ],
-        },
-        {
-          id: 'chat-sess-3',
-          notebookId: 'nb-1',
-          title: 'Chat 3: Fine-Tuning Guide',
-          createdAt: new Date(Date.now() - 10800000),
-          updatedAt: new Date(Date.now() - 10800000),
-          messages: [],
-        },
-      ],*/
       activeChatSessionId: null,
       messages: [],
       isStreaming: false,

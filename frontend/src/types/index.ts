@@ -147,6 +147,8 @@ export interface AppState {
   // Notebooks
   notebooks: Notebook[]
   activeNotebookId: string | null
+  loadingNotebooks: boolean
+  notebooksError: string | null
 
   // Chat Sessions
   chatSessions: ChatSession[]
