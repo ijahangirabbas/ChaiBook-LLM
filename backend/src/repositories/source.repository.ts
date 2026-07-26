@@ -44,6 +44,29 @@ export class SourceRepository {
     checksum?: string;
     status?: SourceIndexingStatus;
   }) {
+    // Ensure parent workspace exists
+    const ws = await prisma.workspace.upsert({
+      where: { id: data.workspaceId },
+      create: {
+        id: data.workspaceId,
+        name: 'Personal Workspace',
+        slug: `ws-${data.workspaceId}`,
+      },
+      update: {},
+    });
+
+    // Ensure parent notebook exists
+    await prisma.notebook.upsert({
+      where: { id: data.notebookId },
+      create: {
+        id: data.notebookId,
+        workspaceId: ws.id,
+        title: 'Active Research Notebook',
+        userId: 'system',
+      },
+      update: {},
+    });
+
     let prismaType: PrismaSourceType = PrismaSourceType.TEXT;
     const upperType = data.type ? data.type.toUpperCase() : 'TEXT';
     if (Object.values(PrismaSourceType).includes(upperType as PrismaSourceType)) {
@@ -54,7 +77,7 @@ export class SourceRepository {
       data: {
         ...(data.sourceId ? { id: data.sourceId } : {}),
         notebookId: data.notebookId,
-        workspaceId: data.workspaceId,
+        workspaceId: ws.id,
         title: data.title,
         type: prismaType,
         url: data.url,

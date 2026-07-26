@@ -13,7 +13,12 @@ app.use(
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
-      if (config.corsOrigins.includes(origin) || config.corsOrigins.includes('*')) {
+      if (
+        config.corsOrigins.includes(origin) ||
+        config.corsOrigins.includes('*') ||
+        origin.endsWith('.vercel.app') ||
+        origin.endsWith('jahangirabbas.com')
+      ) {
         return callback(null, true);
       }
       return callback(new Error(`CORS policy error: Origin ${origin} is not allowed`));

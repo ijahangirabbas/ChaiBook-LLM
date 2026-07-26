@@ -3,8 +3,31 @@ import { MessageRole } from '@prisma/client';
 
 export class ConversationRepository {
   async getOrCreateConversation(notebookId: string, workspaceId: string, title?: string) {
+    // Ensure parent workspace exists
+    const ws = await prisma.workspace.upsert({
+      where: { id: workspaceId },
+      create: {
+        id: workspaceId,
+        name: 'Personal Workspace',
+        slug: `ws-${workspaceId}`,
+      },
+      update: {},
+    });
+
+    // Ensure parent notebook exists
+    await prisma.notebook.upsert({
+      where: { id: notebookId },
+      create: {
+        id: notebookId,
+        workspaceId: ws.id,
+        title: 'Active Research Notebook',
+        userId: 'system',
+      },
+      update: {},
+    });
+
     let conversation = await prisma.conversation.findFirst({
-      where: { notebookId, workspaceId },
+      where: { notebookId, workspaceId: ws.id },
       orderBy: { updatedAt: 'desc' },
       include: {
         messages: {
@@ -18,7 +41,7 @@ export class ConversationRepository {
       conversation = await prisma.conversation.create({
         data: {
           notebookId,
-          workspaceId,
+          workspaceId: ws.id,
           title: title || 'Chat Overview',
         },
         include: {

@@ -110,14 +110,35 @@ export class NotebookRepository {
     workspaceId: string;
     userId: string;
   }): Promise<NotebookModel> {
+    const ws = await prisma.workspace.upsert({
+      where: { id: data.workspaceId },
+      create: {
+        id: data.workspaceId,
+        name: 'Personal Workspace',
+        slug: `ws-${data.workspaceId}`,
+      },
+      update: {},
+    });
+
+    const user = await prisma.user.upsert({
+      where: { id: data.userId },
+      create: {
+        id: data.userId,
+        email: `${data.userId}@auth.local`,
+        name: 'Workspace User',
+        provider: 'system',
+      },
+      update: {},
+    });
+
     const created = await prisma.notebook.create({
       data: {
         title: data.title,
         description: data.description || '',
         color: data.color || 'indigo',
         icon: data.icon || 'book',
-        workspaceId: data.workspaceId,
-        userId: data.userId,
+        workspaceId: ws.id,
+        userId: user.id,
       },
     });
 

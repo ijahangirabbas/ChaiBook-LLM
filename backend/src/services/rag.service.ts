@@ -111,21 +111,27 @@ export class RagService {
         question: query,
       });
 
-      const llm = new ChatOpenAI({
-        openAIApiKey: config.openaiApiKey,
-        modelName: config.chatModel,
-        temperature: 0.2,
-        streaming: true,
-      });
+      if (!config.openaiApiKey) {
+        fullResponseText = `[OPENAI_API_KEY not configured] Here is the retrieved context from your notebook sources:\n\n${searchResults.map((r, i) => `[${i + 1}] ${r.document.pageContent}`).join('\n\n')}`;
+        sendSSEEvent(res, { type: 'token', content: fullResponseText });
+        sendSSEEvent(res, { type: 'token.delta', text: fullResponseText });
+      } else {
+        const llm = new ChatOpenAI({
+          openAIApiKey: config.openaiApiKey,
+          modelName: config.chatModel,
+          temperature: 0.2,
+          streaming: true,
+        });
 
-      const stream = await llm.stream(formattedPrompt);
+        const stream = await llm.stream(formattedPrompt);
 
-      for await (const chunk of stream) {
-        const textToken = typeof chunk.content === 'string' ? chunk.content : String(chunk.content || '');
-        if (textToken) {
-          fullResponseText += textToken;
-          sendSSEEvent(res, { type: 'token', content: textToken });
-          sendSSEEvent(res, { type: 'token.delta', text: textToken });
+        for await (const chunk of stream) {
+          const textToken = typeof chunk.content === 'string' ? chunk.content : String(chunk.content || '');
+          if (textToken) {
+            fullResponseText += textToken;
+            sendSSEEvent(res, { type: 'token', content: textToken });
+            sendSSEEvent(res, { type: 'token.delta', text: textToken });
+          }
         }
       }
 

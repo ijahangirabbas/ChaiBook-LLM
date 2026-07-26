@@ -20,11 +20,36 @@ export class ApiService {
     };
   }
 
+  private static async parseJson(res: Response): Promise<any> {
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok) {
+      let errorMessage = `Server error ${res.status}`;
+      if (contentType.includes('application/json')) {
+        try {
+          const errData = await res.json();
+          errorMessage = errData.message || errData.error || errorMessage;
+        } catch {
+          // ignore json parse error on error response
+        }
+      } else {
+        const text = await res.text();
+        errorMessage = `API endpoint returned HTML (${res.status}). Verify VITE_API_URL environment variable. Summary: ${text.substring(0, 100)}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      throw new Error(`Expected JSON but received non-JSON response from API (${res.status}). Verify VITE_API_URL. Response summary: ${text.substring(0, 100)}`);
+    }
+
+    return res.json();
+  }
+
   // ─── Notebook Endpoints ──────────────────────────────────────────────────
   static async getNotebooks(): Promise<Notebook[]> {
     const res = await fetch(`${API_BASE_URL}/notebooks`, { headers: await this.headers() });
-    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-    const json = await res.json();
+    const json = await this.parseJson(res);
     return (json.data || []).map((nb: any) => ({
       id: nb.id,
       title: nb.title,
@@ -42,8 +67,7 @@ export class ApiService {
       headers: await this.headers(true),
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error('Unable to create this notebook.');
-    const json = await res.json();
+    const json = await this.parseJson(res);
     const nb = json.data;
     return {
       id: nb.id,
@@ -62,16 +86,12 @@ export class ApiService {
       headers: await this.headers(true),
       body: JSON.stringify(data),
     });
-    if (!res.ok) {
-      throw new Error(`Failed to update notebook (status: ${res.status})`);
-    }
+    await this.parseJson(res);
   }
 
   static async deleteNotebook(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/notebooks/${id}`, { method: 'DELETE', headers: await this.headers() });
-    if (!response.ok) {
-      throw new Error(`Failed to delete notebook (status: ${response.status})`);
-    }
+    const res = await fetch(`${API_BASE_URL}/notebooks/${id}`, { method: 'DELETE', headers: await this.headers() });
+    await this.parseJson(res);
   }
 
   // ─── Source Endpoints ────────────────────────────────────────────────────
@@ -84,8 +104,7 @@ export class ApiService {
       headers: await this.headers(),
       body: formData,
     });
-    if (!res.ok) throw new Error('File upload failed');
-    const json = await res.json();
+    const json = await this.parseJson(res);
     return {
       sourceId: json.sourceId,
       status: json.status || 'uploading',
@@ -98,8 +117,7 @@ export class ApiService {
       headers: await this.headers(true),
       body: JSON.stringify({ url, type }),
     });
-    if (!res.ok) throw new Error('URL source creation failed');
-    const json = await res.json();
+    const json = await this.parseJson(res);
     return {
       sourceId: json.sourceId,
       status: json.status || 'uploading',
@@ -112,8 +130,7 @@ export class ApiService {
       headers: await this.headers(true),
       body: JSON.stringify({ title, content, type: 'text' }),
     });
-    if (!res.ok) throw new Error('Text source creation failed');
-    const json = await res.json();
+    const json = await this.parseJson(res);
     return {
       sourceId: json.sourceId,
       status: json.status || 'uploading',
@@ -122,8 +139,7 @@ export class ApiService {
 
   static async fetchSourceStatus(sourceId: string): Promise<{ status: SourceIndexingStatus; progress: number; errorMessage?: string }> {
     const res = await fetch(`${API_BASE_URL}/sources/${sourceId}/status`, { headers: await this.headers() });
-    if (!res.ok) throw new Error('Source status fetch failed');
-    const json = await res.json();
+    const json = await this.parseJson(res);
     return {
       status: json.status,
       progress: json.progress ?? 0,
@@ -132,11 +148,13 @@ export class ApiService {
   }
 
   static async reindexSource(sourceId: string): Promise<void> {
-    await fetch(`${API_BASE_URL}/sources/${sourceId}/reindex`, { method: 'POST', headers: await this.headers() });
+    const res = await fetch(`${API_BASE_URL}/sources/${sourceId}/reindex`, { method: 'POST', headers: await this.headers() });
+    await this.parseJson(res);
   }
 
   static async deleteSource(sourceId: string): Promise<void> {
-    await fetch(`${API_BASE_URL}/sources/${sourceId}`, { method: 'DELETE', headers: await this.headers() });
+    const res = await fetch(`${API_BASE_URL}/sources/${sourceId}`, { method: 'DELETE', headers: await this.headers() });
+    await this.parseJson(res);
   }
 
   // ─── SSE RAG Chat Endpoint ───────────────────────────────────────────────
@@ -155,7 +173,8 @@ export class ApiService {
       });
 
       if (!response.ok) {
-        throw new Error(`Chat API error: ${response.statusText}`);
+        const text = await response.text();
+        throw new Error(`Chat API error (${response.status}): ${text.substring(0, 100)}`);
       }
 
       const reader = response.body?.getReader();

@@ -23,7 +23,7 @@ export const createSourceSchema = z.object({
 
 export const chatStreamSchema = z.object({
   message: z.string().min(1, 'Message cannot be empty'),
-  conversationId: z.string().uuid().optional(),
+  conversationId: z.string().min(1).optional(),
 });
 
 export const paginationQuerySchema = z.object({
