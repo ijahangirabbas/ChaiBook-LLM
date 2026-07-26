@@ -94,6 +94,7 @@ export interface User {
   avatar: string
   plan: UserPlan
   storage: StorageInfo
+  workspaceId?: string
 }
 
 // ─── Navigation Types ─────────────────────────────────────────────────────────
