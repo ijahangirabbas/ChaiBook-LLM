@@ -44,7 +44,7 @@ export class JinaEmbeddings extends Embeddings {
 }
 
 export function getEmbeddingsProvider(): Embeddings {
-  const provider = (process.env.EMBEDDING_PROVIDER || 'openai').toLowerCase();
+  const provider = (process.env.EMBEDDING_PROVIDER || (process.env.JINA_API_KEY ? 'jina' : 'openai')).toLowerCase();
 
   if (provider === 'jina') {
     console.log('⚡ Using Jina Embeddings API (jina-embeddings-v2-base-en)...');
@@ -52,7 +52,7 @@ export function getEmbeddingsProvider(): Embeddings {
   }
 
   return new OpenAIEmbeddings({
-    openAIApiKey: config.openaiApiKey,
+    openAIApiKey: config.openaiApiKey || 'mock-openai-key-for-test',
     modelName: config.embeddingModel,
   });
 }
