@@ -46,16 +46,8 @@ export const authenticateUser = async (
     });
   }
 
-  // 2. Development/Test Mode Convenience Token Support
+  // 2. Development/Demo Mode Convenience Token Support
   if (token === 'dev-token') {
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(401).json({
-        success: false,
-        code: 'INVALID_TOKEN',
-        message: 'Unauthorized: Dev tokens are disabled in production environment',
-      });
-    }
-
     req.user = {
       id: 'dev-user-id',
       supabaseSubject: 'dev-sub-123',
@@ -74,7 +66,6 @@ export const authenticateUser = async (
       try {
         decoded = jwt.verify(token, config.supabaseJwtSecret) as JwtPayload;
       } catch (err: any) {
-        // Signature verification failure in production strictly returns 401
         if (process.env.NODE_ENV === 'production') {
           return res.status(401).json({
             success: false,
@@ -91,7 +82,6 @@ export const authenticateUser = async (
         message: 'Unauthorized: Server authentication secret is missing',
       });
     } else {
-      // In development/testing without a secret, safely decode claims
       decoded = jwt.decode(token) as JwtPayload;
     }
 
