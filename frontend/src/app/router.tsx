@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
+import { AuthenticateWithRedirectCallback, useAuth } from '@clerk/clerk-react'
 import { AuthLayout } from './layouts/AuthLayout'
 import { AppLayout } from './layouts/AppLayout'
 import { useAppStore } from '../store/useAppStore'
@@ -14,7 +15,7 @@ const ChatPage = lazy(() => import('./pages/Chat/ChatPage').then(m => ({ default
 // Loading fallback
 function PageLoader() {
   return (
-    <div className="flex-1 flex items-center justify-center">
+    <div className="flex-1 flex items-center justify-center min-h-screen bg-background dark:bg-background-dark">
       <div className="flex flex-col items-center gap-3">
         <div className="text-3xl animate-bounce">☕</div>
         <div className="flex gap-1">
@@ -34,14 +35,24 @@ function PageLoader() {
 // Auth guard component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAppStore()
-  if (!isAuthenticated) return <Navigate to="/" replace />
+  const { isLoaded, isSignedIn } = useAuth()
+
+  if (!isLoaded) return <PageLoader />
+
+  const authenticated = Boolean(isSignedIn || isAuthenticated)
+  if (!authenticated) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
 // Public route (redirect if already authenticated)
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAppStore()
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />
+  const { isLoaded, isSignedIn } = useAuth()
+
+  if (!isLoaded) return <PageLoader />
+
+  const authenticated = Boolean(isSignedIn || isAuthenticated)
+  if (authenticated) return <Navigate to="/dashboard" replace />
   return <>{children}</>
 }
 
@@ -58,6 +69,15 @@ const router = createBrowserRouter([
               <LoginPage />
             </Suspense>
           </PublicRoute>
+        ),
+      },
+      {
+        path: '/sso-callback',
+        element: (
+          <AuthenticateWithRedirectCallback
+            signUpForceRedirectUrl="/dashboard"
+            signInForceRedirectUrl="/dashboard"
+          />
         ),
       },
     ],
@@ -159,3 +179,4 @@ const router = createBrowserRouter([
 export function Router() {
   return <RouterProvider router={router} />
 }
+

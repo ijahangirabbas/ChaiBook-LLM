@@ -29,7 +29,7 @@ export function LoginPage() {
       if (isLoaded && signIn) {
         await signIn.authenticateWithRedirect({
           strategy: 'oauth_google',
-          redirectUrl: '/dashboard',
+          redirectUrl: '/sso-callback',
           redirectUrlComplete: '/dashboard',
         })
       } else {
@@ -60,7 +60,7 @@ export function LoginPage() {
       if (isLoaded && signIn) {
         await signIn.authenticateWithRedirect({
           strategy: 'oauth_github',
-          redirectUrl: '/dashboard',
+          redirectUrl: '/sso-callback',
           redirectUrlComplete: '/dashboard',
         })
       } else {
@@ -82,6 +82,7 @@ export function LoginPage() {
       setLoadingProvider(null)
     }
   }
+
 
   return (
     <div className="flex w-full h-screen overflow-hidden bg-gradient-to-br from-[#F4F6FF] via-[#F7F8FC] to-[#EEF1FF] dark:from-[#000000] dark:via-[#050510] dark:to-[#000000]">
