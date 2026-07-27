@@ -4,23 +4,30 @@ import { BaseLoader, LoaderInput } from './base.loader';
 
 export class WebLoader extends BaseLoader {
   async load(input: LoaderInput): Promise<Document[]> {
-    if (!input.url) {
-      throw new Error('Web Loader requires a valid target URL.');
+    if (!input.url && !input.rawContent) {
+      throw new Error('Web Loader requires a valid target URL or content.');
     }
 
-    const loader = new CheerioWebBaseLoader(input.url, {
-      selector: 'p, h1, h2, h3, h4, h5, h6, li, article, section',
-    });
+    const domain = input.url ? new URL(input.url).hostname : 'webpage';
+    let docs: Document[] = [];
 
-    const docs = await loader.load();
-    const domain = new URL(input.url).hostname;
+    if (input.url) {
+      try {
+        const loader = new CheerioWebBaseLoader(input.url, {
+          selector: 'p, h1, h2, h3, h4, h5, h6, li, article, section',
+        });
+        docs = await loader.load();
+      } catch {
+        // Fallback to rawContent if fetch fails
+      }
+    }
+
+    if (docs.length === 0 && input.rawContent) {
+      docs = [new Document({ pageContent: input.rawContent, metadata: {} })];
+    }
 
     return docs.map((doc) => {
-      // Clean up whitespace
-      const cleanContent = doc.pageContent
-        .replace(/\s+/g, ' ')
-        .trim();
-
+      const cleanContent = doc.pageContent.replace(/\s+/g, ' ').trim();
       return new Document({
         pageContent: cleanContent,
         metadata: {

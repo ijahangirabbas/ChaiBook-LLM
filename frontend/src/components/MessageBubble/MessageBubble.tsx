@@ -108,8 +108,12 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
                 title={`Click to view exact excerpt from ${s.title}`}
               >
                 <span>[{s.number || idx + 1}]</span>
-                <span className="max-w-[140px] truncate">{s.title}</span>
-                {s.pageNumber && <span className="text-[10px] opacity-75">p.{s.pageNumber}</span>}
+                <span className="max-w-[160px] truncate">{s.title}</span>
+                {(s.pagesText || s.pageNumber) && (
+                  <span className="text-[10px] opacity-85 font-mono bg-primary/10 px-1 py-0.2 rounded">
+                    {s.pagesText || `p.${s.pageNumber}`}
+                  </span>
+                )}
               </button>
             ))}
           </div>

@@ -18,6 +18,13 @@ export interface TimelineSegment {
   endSeconds: number
 }
 
+export interface SourceChunk {
+  retrievedChunk: string
+  pageNumber?: number
+  similarity?: number
+  timelineSegment?: TimelineSegment
+}
+
 export interface Source {
   id: string
   notebookId?: string
@@ -40,6 +47,8 @@ export interface Source {
   charOffset?: { start: number; end: number }
   transcript?: TranscriptEntry[]
   chunkIndex?: number
+  chunks?: SourceChunk[]
+  pagesText?: string
 }
 
 // ─── Message Types ────────────────────────────────────────────────────────────

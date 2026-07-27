@@ -6,24 +6,45 @@ import { secondsToTimeString } from '../utils/timestamp.utils';
 
 export class YoutubeLoader extends BaseLoader {
   async load(input: LoaderInput): Promise<Document[]> {
-    if (!input.url) {
-      throw new Error('YouTube Loader requires a valid video URL.');
+    if (!input.url && !input.rawContent) {
+      throw new Error('YouTube Loader requires a valid video URL or transcript content.');
     }
 
-    const rawTranscript = await YoutubeTranscript.fetchTranscript(input.url);
+    let transcriptEntries: TranscriptEntry[] = [];
 
-    if (!rawTranscript || rawTranscript.length === 0) {
-      throw new Error('No transcripts found for this YouTube video.');
+    if (input.url) {
+      try {
+        const rawTranscript = await YoutubeTranscript.fetchTranscript(input.url);
+        if (rawTranscript && rawTranscript.length > 0) {
+          transcriptEntries = rawTranscript.map((item) => {
+            const startSeconds = Math.floor(item.offset / 1000);
+            return {
+              timestamp: secondsToTimeString(startSeconds),
+              seconds: startSeconds,
+              text: item.text,
+            };
+          });
+        }
+      } catch {
+        // Fallback to rawContent if YouTube transcript fetch fails (disabled CC on video)
+      }
     }
 
-    const transcriptEntries: TranscriptEntry[] = rawTranscript.map((item) => {
-      const startSeconds = Math.floor(item.offset / 1000);
-      return {
-        timestamp: secondsToTimeString(startSeconds),
-        seconds: startSeconds,
-        text: item.text,
-      };
-    });
+    if (transcriptEntries.length === 0 && input.rawContent) {
+      const lines = input.rawContent.split('\n').filter((l) => l.trim().length > 0);
+      transcriptEntries = lines.map((line, idx) => {
+        const startSec = idx * 15;
+        return {
+          timestamp: secondsToTimeString(startSec),
+          seconds: startSec,
+          text: line.replace(/\[\d{2}:\d{2}:\d{2}\]/, '').trim() || line.trim(),
+        };
+      });
+    }
+
+    if (transcriptEntries.length === 0) {
+      throw new Error('No transcripts found for this YouTube video. Verify captions are enabled.');
+    }
 
     const firstSegment = transcriptEntries[0];
     const lastSegment = transcriptEntries[transcriptEntries.length - 1];

@@ -8,7 +8,7 @@ import { MessageBubble } from '../../../components/MessageBubble/MessageBubble'
 import { SourceCard } from '../../../components/SourceCard/SourceCard'
 import { useAppStore } from '../../../store/useAppStore'
 import { generateId } from '../../../lib/utils'
-import type { Message } from '../../../types'
+import type { Message, Source } from '../../../types'
 import { ApiService } from '../../../services/api.service'
 import { cn } from '../../../lib/utils'
 
@@ -127,23 +127,58 @@ export function ChatPage() {
         accumulatedContent += token
       },
       () => {
-        const finalSources = retrievedCitations.length > 0
-          ? retrievedCitations.map((c: any) => ({
-              id: c.source_id || generateId(),
-              notebookId: currentNotebookId,
-              type: (c.source_type || 'text').toLowerCase(),
-              title: c.title || 'Knowledge Base Source',
-              url: c.url,
-              domain: c.domain || (c.url ? new URL(c.url).hostname : 'Knowledge Base'),
-              number: c.citationNumber || 1,
-              status: 'ready' as const,
+        let finalSources: Source[] = [];
+        if (retrievedCitations.length > 0) {
+          const groupedMap = new Map<string, Source>();
+          let currentNumber = 1;
+
+          retrievedCitations.forEach((c: any) => {
+            const key = c.source_id || c.title || 'unknown-src';
+            const existing = groupedMap.get(key);
+
+            const chunkItem = {
               retrievedChunk: c.retrievedChunk,
-              similarity: c.similarity,
               pageNumber: c.pageNumber,
-              totalPages: c.totalPages,
+              similarity: c.similarity,
               timelineSegment: c.timelineSegment,
-            }))
-          : [];
+            };
+
+            if (existing) {
+              if (existing.chunks) {
+                existing.chunks.push(chunkItem);
+              }
+              const pagesSet = new Set<number>();
+              existing.chunks?.forEach((ch: any) => {
+                if (ch.pageNumber) pagesSet.add(ch.pageNumber);
+              });
+              if (pagesSet.size > 0) {
+                existing.pagesText = `p.${Array.from(pagesSet).sort((a, b) => a - b).join(', p.')}`;
+              }
+            } else {
+              const pagesText = c.pageNumber ? `p.${c.pageNumber}` : undefined;
+              const newSource: Source = {
+                id: c.source_id || generateId(),
+                notebookId: currentNotebookId,
+                type: (c.source_type || 'text').toLowerCase(),
+                title: c.title || 'Knowledge Base Source',
+                url: c.url,
+                domain: c.domain || (c.url ? new URL(c.url).hostname : 'Knowledge Base'),
+                number: currentNumber++,
+                status: 'ready' as const,
+                retrievedChunk: c.retrievedChunk,
+                similarity: c.similarity,
+                pageNumber: c.pageNumber,
+                totalPages: c.totalPages,
+                timelineSegment: c.timelineSegment,
+                chunks: [chunkItem],
+                pagesText,
+              };
+              groupedMap.set(key, newSource);
+            }
+          });
+
+          finalSources = Array.from(groupedMap.values());
+        }
 
         const aiMsg: Message = {
           id: aiMsgId,

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ChevronLeft, ChevronRight, ExternalLink, Copy, Check, Info, Play, FileText, Globe } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, ExternalLink, Copy, Check, Play, FileText, Globe } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import { SOURCE_TYPE_CONFIG } from '../../lib/constants'
 import { SourceIcon } from '../SourceCard/SourceCard'
@@ -376,58 +376,74 @@ export function SourceInspector() {
                     transition={{ duration: 0.2 }}
                     className="p-4 space-y-4"
                   >
-                    {/* Similarity score */}
-                    {source.similarity !== undefined && (
-                      <div>
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <span className="text-xs font-semibold text-text-secondary dark:text-text-secondary-dark">
-                            Similarity Match Score
+                    {/* Multi-chunk retrieved content list */}
+                    {source.chunks && source.chunks.length > 0 ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-text-primary dark:text-text-primary-dark">
+                            Retrieved Passages ({source.chunks.length} cited excerpt{source.chunks.length > 1 ? 's' : ''})
                           </span>
-                          <Info className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark" />
+                          {source.pagesText && (
+                            <span className="text-[11px] font-mono font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                              {source.pagesText}
+                            </span>
+                          )}
                         </div>
-                        <div className="flex items-center gap-3">
-                          <div className="flex-1 h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${source.similarity * 100}%` }}
-                              transition={{ duration: 0.8, ease: 'easeOut' }}
-                              className="h-full bg-gradient-primary rounded-full"
-                            />
-                          </div>
-                          <span className="text-sm font-bold text-primary">
-                            {Math.round(source.similarity * 100)}%
-                          </span>
-                        </div>
-                      </div>
-                    )}
 
-                    {/* Retrieved chunk */}
-                    {source.retrievedChunk && (
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold text-text-secondary dark:text-text-secondary-dark">
-                            Retrieved Content Chunk
-                          </span>
-                          <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={handleCopyChunk}
-                            className="flex items-center gap-1 text-xs text-primary hover:underline"
-                            aria-label="Copy chunk text"
+                        {source.chunks.map((chk, idx) => (
+                          <div
+                            key={idx}
+                            className="p-3.5 rounded-xl bg-primary/5 dark:bg-primary/10 border border-primary/15 dark:border-primary/25 space-y-2"
                           >
-                            {copiedChunk ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
-                            {copiedChunk ? 'Copied' : 'Copy Chunk'}
-                          </motion.button>
-                        </div>
-                        <div className={cn(
-                          'p-3.5 rounded-xl text-sm text-text-primary dark:text-text-primary-dark leading-relaxed',
-                          'bg-primary/5 dark:bg-primary/10 border border-primary/10 dark:border-primary/20'
-                        )}>
-                          <p className="border-l-2 border-primary pl-3 font-medium">
-                            {source.retrievedChunk}
-                          </p>
-                        </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-primary flex items-center gap-1.5">
+                                <span>Excerpt #{idx + 1}</span>
+                                {chk.pageNumber && (
+                                  <span className="font-mono bg-primary/15 px-1.5 py-0.2 rounded text-[10px]">
+                                    Page {chk.pageNumber}
+                                  </span>
+                                )}
+                              </span>
+                              {chk.similarity !== undefined && (
+                                <span className="font-bold text-emerald-600 dark:text-emerald-400 text-[11px]">
+                                  {Math.round(chk.similarity * 100)}% match
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-text-primary dark:text-text-primary-dark leading-relaxed font-medium border-l-2 border-primary pl-2.5">
+                              {chk.retrievedChunk}
+                            </p>
+                          </div>
+                        ))}
                       </div>
+                    ) : (
+                      source.retrievedChunk && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-semibold text-text-secondary dark:text-text-secondary-dark">
+                              Retrieved Content Chunk
+                            </span>
+                            <motion.button
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={handleCopyChunk}
+                              className="flex items-center gap-1 text-xs text-primary hover:underline"
+                              aria-label="Copy chunk text"
+                            >
+                              {copiedChunk ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+                              {copiedChunk ? 'Copied' : 'Copy Chunk'}
+                            </motion.button>
+                          </div>
+                          <div className={cn(
+                            'p-3.5 rounded-xl text-sm text-text-primary dark:text-text-primary-dark leading-relaxed',
+                            'bg-primary/5 dark:bg-primary/10 border border-primary/10 dark:border-primary/20'
+                          )}>
+                            <p className="border-l-2 border-primary pl-3 font-medium">
+                              {source.retrievedChunk}
+                            </p>
+                          </div>
+                        </div>
+                      )
                     )}
 
                     {/* Chunk metadata */}
