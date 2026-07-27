@@ -91,7 +91,11 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
           )}
         >
           {/* Content with interactive citation parsing */}
-          <ProcessedContent content={message.content} sources={message.sources} />
+          {message.content.trim() ? (
+            <ProcessedContent content={message.content} sources={message.sources} />
+          ) : (
+            <p className="italic text-text-muted">No answer generated for this query.</p>
+          )}
         </div>
 
         {/* Cited Sources Badge List */}

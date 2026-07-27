@@ -55,12 +55,14 @@ export function SourceCard({ source, onClick, isActive }: SourceCardProps) {
   const status = source.status || 'ready'
 
   return (
-    <motion.button
+    <motion.div
       whileHover={{ y: -2 }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
+      role="button"
+      tabIndex={0}
       className={cn(
-        'relative flex flex-col gap-1.5 p-3.5 rounded-xl text-left group',
+        'relative flex flex-col gap-1.5 p-3.5 rounded-xl text-left group cursor-pointer',
         'bg-card dark:bg-[#0A0A0A] min-w-[200px] max-w-[230px] w-[210px] shrink-0',
         'border transition-colors duration-200',
         isActive
@@ -153,7 +155,7 @@ export function SourceCard({ source, onClick, isActive }: SourceCardProps) {
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
-    </motion.button>
+    </motion.div>
   )
 }
 
