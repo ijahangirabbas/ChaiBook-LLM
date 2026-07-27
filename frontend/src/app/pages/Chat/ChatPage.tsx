@@ -133,7 +133,13 @@ export function ChatPage() {
           let currentNumber = 1;
 
           retrievedCitations.forEach((c: any) => {
-            const key = c.source_id || c.title || 'unknown-src';
+            const matchByStoreId = activeNotebookSources.find((s) => s.id === c.source_id);
+            const matchByTitle = activeNotebookSources.find(
+              (s) => c.title && s.title.toLowerCase().includes(c.title.toLowerCase())
+            );
+            const matchedWorkspaceSource = matchByStoreId || matchByTitle;
+
+            const key = matchedWorkspaceSource ? matchedWorkspaceSource.id : (c.source_id || c.title || 'unknown-src');
             const existing = groupedMap.get(key);
 
             const chunkItem = {
@@ -156,19 +162,24 @@ export function ChatPage() {
               }
             } else {
               const pagesText = c.pageNumber ? `p.${c.pageNumber}` : undefined;
+              const rawType = (c.source_type || matchedWorkspaceSource?.type || 'text').toLowerCase();
+              const sourceType = (rawType === 'text' && matchedWorkspaceSource?.type)
+                ? matchedWorkspaceSource.type
+                : (rawType as any);
+
               const newSource: Source = {
-                id: c.source_id || generateId(),
+                id: matchedWorkspaceSource?.id || c.source_id || generateId(),
                 notebookId: currentNotebookId,
-                type: (c.source_type || 'text').toLowerCase(),
-                title: c.title || 'Knowledge Base Source',
-                url: c.url,
-                domain: c.domain || (c.url ? new URL(c.url).hostname : 'Knowledge Base'),
+                type: sourceType,
+                title: matchedWorkspaceSource?.title || c.title || 'Knowledge Base Source',
+                url: c.url || matchedWorkspaceSource?.url,
+                domain: c.domain || matchedWorkspaceSource?.domain || (c.url ? new URL(c.url).hostname : 'Knowledge Base'),
                 number: currentNumber++,
                 status: 'ready' as const,
                 retrievedChunk: c.retrievedChunk,
                 similarity: c.similarity,
                 pageNumber: c.pageNumber,
-                totalPages: c.totalPages,
+                totalPages: c.totalPages || matchedWorkspaceSource?.totalPages,
                 timelineSegment: c.timelineSegment,
                 chunks: [chunkItem],
                 pagesText,

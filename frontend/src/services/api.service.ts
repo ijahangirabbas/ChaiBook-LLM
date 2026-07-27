@@ -232,6 +232,16 @@ export class ApiService {
     await this.parseJson(res);
   }
 
+  static async getSourcePreview(sourceId: string): Promise<any> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/sources/${sourceId}/preview`, { headers: await this.headers() });
+      const json = await this.parseJson(res);
+      return json.data || null;
+    } catch {
+      return null;
+    }
+  }
+
   // ─── Chat History & Conversation Endpoints ────────────────────────────────
   static async getNotebookConversations(notebookId: string): Promise<any[]> {
     const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/conversations`, { headers: await this.headers() });

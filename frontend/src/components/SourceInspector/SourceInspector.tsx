@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, ChevronLeft, ChevronRight, ExternalLink, Copy, Check, Play, FileText, Globe } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
+import { ApiService } from '../../services/api.service'
 import { SOURCE_TYPE_CONFIG } from '../../lib/constants'
 import { SourceIcon } from '../SourceCard/SourceCard'
 import { cn } from '../../lib/utils'
@@ -57,6 +58,7 @@ export function SourceInspector() {
   } = useAppStore()
   const [copiedChunk, setCopiedChunk] = useState(false)
   const [selectedTimestamp, setSelectedTimestamp] = useState<number | null>(null)
+  const [presignedUrl, setPresignedUrl] = useState<string | null>(null)
 
   const sources = storeSources
   const activeIndex = sources.findIndex((s) => s.id === activeSourceId)
@@ -64,6 +66,28 @@ export function SourceInspector() {
   const source = activeSourceOverride
     ? { ...(baseSource || {}), ...activeSourceOverride }
     : baseSource
+
+  useEffect(() => {
+    let isMounted = true
+    if (sourceInspectorOpen && source?.id) {
+      if (source.url && (source.url.startsWith('http://') || source.url.startsWith('https://'))) {
+        setPresignedUrl(source.url)
+      } else {
+        ApiService.getSourcePreview(source.id)
+          .then((res) => {
+            if (isMounted && res?.presignedDownloadUrl) {
+              setPresignedUrl(res.presignedDownloadUrl)
+            }
+          })
+          .catch(() => {})
+      }
+    } else {
+      setPresignedUrl(null)
+    }
+    return () => {
+      isMounted = false
+    }
+  }, [sourceInspectorOpen, source?.id, source?.url])
 
   const handlePrev = () => {
     if (activeIndex > 0) {
@@ -192,16 +216,16 @@ export function SourceInspector() {
               <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-1 leading-snug">
                 {source.title}
               </h3>
-              {source.url && (
+              {(source.url || presignedUrl) && (
                 <a
-                  href={source.url}
+                  href={presignedUrl || source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs text-primary hover:underline"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 mt-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors shadow-xs"
                   aria-label={`Open ${source.title} in new tab`}
                 >
-                  <span className="truncate">{source.domain || source.url}</span>
-                  <ExternalLink className="w-3 h-3 shrink-0" />
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Original Source File</span>
                 </a>
               )}
             </div>
