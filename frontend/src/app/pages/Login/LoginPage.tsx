@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Shield, MessageSquare, Database, Zap, FileText, FileCode, AlertCircle } from 'lucide-react'
+import { useSignIn } from '@clerk/clerk-react'
 import { AUTH_FEATURES } from '../../../lib/constants'
 import { cn } from '../../../lib/utils'
-import { supabase, isSupabaseConfigured, getRedirectURL } from '../../../lib/supabase'
+import { useAppStore } from '../../../store/useAppStore'
+import { useNavigate } from 'react-router-dom'
 
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Shield,
@@ -15,27 +17,36 @@ const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
 export function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [loadingProvider, setLoadingProvider] = useState<'google' | 'github' | null>(null)
+  const { signIn, isLoaded } = useSignIn()
+  const { login, fetchNotebooksFromApi } = useAppStore()
+  const navigate = useNavigate()
 
   const handleGoogleLogin = async () => {
     setErrorMsg(null)
-    if (!isSupabaseConfigured || !supabase) {
-      setErrorMsg('Supabase credentials are missing or unconfigured. Please set valid VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY in your environment.')
-      return
-    }
+    setLoadingProvider('google')
 
     try {
-      setLoadingProvider('google')
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${getRedirectURL()}/dashboard`,
-        },
-      })
-      if (error) {
-        setErrorMsg(`Google Auth Error: ${error.message}`)
+      if (isLoaded && signIn) {
+        await signIn.authenticateWithRedirect({
+          strategy: 'oauth_google',
+          redirectUrl: '/dashboard',
+          redirectUrlComplete: '/dashboard',
+        })
+      } else {
+        // Demo fallback if Clerk is unconfigured
+        login({
+          id: 'demo-user-id',
+          name: 'Demo Researcher',
+          email: 'user@chaibook.ai',
+          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=chaibook',
+          plan: 'pro',
+          storage: { used: 1.2, total: 10 },
+        })
+        await fetchNotebooksFromApi()
+        navigate('/dashboard')
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to connect to Google OAuth')
+      setErrorMsg(err?.message || 'Failed to authenticate with Google via Clerk')
     } finally {
       setLoadingProvider(null)
     }
@@ -43,24 +54,30 @@ export function LoginPage() {
 
   const handleGithubLogin = async () => {
     setErrorMsg(null)
-    if (!isSupabaseConfigured || !supabase) {
-      setErrorMsg('Supabase credentials are missing or unconfigured. Please set valid VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY in your environment.')
-      return
-    }
+    setLoadingProvider('github')
 
     try {
-      setLoadingProvider('github')
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'github',
-        options: {
-          redirectTo: `${getRedirectURL()}/dashboard`,
-        },
-      })
-      if (error) {
-        setErrorMsg(`GitHub Auth Error: ${error.message}`)
+      if (isLoaded && signIn) {
+        await signIn.authenticateWithRedirect({
+          strategy: 'oauth_github',
+          redirectUrl: '/dashboard',
+          redirectUrlComplete: '/dashboard',
+        })
+      } else {
+        // Demo fallback if Clerk is unconfigured
+        login({
+          id: 'demo-user-id',
+          name: 'Demo Researcher',
+          email: 'user@chaibook.ai',
+          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=chaibook',
+          plan: 'pro',
+          storage: { used: 1.2, total: 10 },
+        })
+        await fetchNotebooksFromApi()
+        navigate('/dashboard')
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to connect to GitHub OAuth')
+      setErrorMsg(err?.message || 'Failed to authenticate with GitHub via Clerk')
     } finally {
       setLoadingProvider(null)
     }
@@ -117,14 +134,10 @@ export function LoginPage() {
           </div>
         </div>
 
-        {/* Bottom Floating Graphic with PDF, YouTube, Web Page, Text, SRT/VTT */}
+        {/* Bottom Floating Graphic */}
         <div className="relative h-28 flex items-end">
-          {/* Soft background wave glow */}
           <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-3xl blur-xl" />
-
-          {/* Floating cards row */}
           <div className="relative z-10 flex flex-wrap items-center gap-2.5">
-            {/* Coffee cup badge */}
             <motion.div
               animate={{ y: [0, -6, 0] }}
               transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
@@ -133,7 +146,6 @@ export function LoginPage() {
               <span className="text-2xl">☕</span>
             </motion.div>
 
-            {/* PDF Document badge */}
             <motion.div
               animate={{ y: [0, -8, 0] }}
               transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.2 }}
@@ -145,7 +157,6 @@ export function LoginPage() {
               PDF Document
             </motion.div>
 
-            {/* YouTube Video badge */}
             <motion.div
               animate={{ y: [0, -7, 0] }}
               transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
@@ -159,7 +170,6 @@ export function LoginPage() {
               YouTube Video
             </motion.div>
 
-            {/* Web Page badge */}
             <motion.div
               animate={{ y: [0, -6, 0] }}
               transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
@@ -173,7 +183,6 @@ export function LoginPage() {
               Web Page
             </motion.div>
 
-            {/* Text File (.txt) badge */}
             <motion.div
               animate={{ y: [0, -8, 0] }}
               transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 1.1 }}
@@ -185,7 +194,6 @@ export function LoginPage() {
               Text (.txt)
             </motion.div>
 
-            {/* Subtitle (.srt / .vtt) badge */}
             <motion.div
               animate={{ y: [0, -7, 0] }}
               transition={{ duration: 4.0, repeat: Infinity, ease: 'easeInOut', delay: 1.4 }}
@@ -265,7 +273,7 @@ export function LoginPage() {
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
-              {loadingProvider === 'google' ? 'Connecting to Google...' : 'Continue with Google'}
+              {loadingProvider === 'google' ? 'Connecting with Clerk...' : 'Continue with Google'}
             </motion.button>
 
             {/* GitHub Button */}
@@ -286,9 +294,8 @@ export function LoginPage() {
               <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" fill="currentColor" aria-hidden="true">
                 <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
               </svg>
-              {loadingProvider === 'github' ? 'Connecting to GitHub...' : 'Continue with GitHub'}
+              {loadingProvider === 'github' ? 'Connecting with Clerk...' : 'Continue with GitHub'}
             </motion.button>
-
           </div>
 
           {/* Terms & Privacy */}

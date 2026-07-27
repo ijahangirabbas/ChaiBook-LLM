@@ -2,9 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LogOut, Settings, User, X, Check, Moon, Sun } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useClerk } from '@clerk/clerk-react'
 import { useAppStore } from '../../store/useAppStore'
 import { cn } from '../../lib/utils'
-import { supabase, isSupabaseConfigured } from '../../lib/supabase'
 
 export function UserMenu() {
   const [open, setOpen] = useState(false)
@@ -15,6 +15,7 @@ export function UserMenu() {
 
   const ref = useRef<HTMLDivElement>(null)
   const { user, logout } = useAppStore()
+  const { signOut } = useClerk()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -28,9 +29,9 @@ export function UserMenu() {
   }, [])
 
   const handleLogout = async () => {
-    if (supabase && isSupabaseConfigured) {
-      await supabase.auth.signOut()
-    }
+    try {
+      await signOut()
+    } catch (err) {}
     logout()
     navigate('/')
   }

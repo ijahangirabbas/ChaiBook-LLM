@@ -9,9 +9,8 @@ export const config = {
   qdrantCollectionName: process.env.QDRANT_COLLECTION_NAME || 'chaibook_sources',
   embeddingModel: 'text-embedding-3-small',
   chatModel: 'gpt-4o',
-  supabaseJwtSecret: process.env.SUPABASE_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_JWT_SECRET || '',
-  supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
+  clerkSecretKey: process.env.CLERK_SECRET_KEY || '',
+  clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY || process.env.VITE_CLERK_PUBLISHABLE_KEY || '',
   corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map((origin) => origin.trim()),
 };
 

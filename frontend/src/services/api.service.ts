@@ -1,5 +1,10 @@
 import type { Notebook, SourceIndexingStatus } from '../types';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+
+declare global {
+  interface Window {
+    Clerk?: any;
+  }
+}
 
 function getApiBaseUrl(): string {
   let raw = (import.meta.env.VITE_API_URL || '').trim();
@@ -17,10 +22,11 @@ export class ApiService {
   private static async headers(json = false): Promise<HeadersInit> {
     let token: string | undefined = undefined;
 
-    if (isSupabaseConfigured && supabase) {
-      const result = await supabase.auth.getSession();
-      token = result?.data?.session?.access_token;
-    }
+    try {
+      if (window.Clerk?.session) {
+        token = await window.Clerk.session.getToken();
+      }
+    } catch (e) {}
 
     const bearerToken = token || 'dev-token';
 
