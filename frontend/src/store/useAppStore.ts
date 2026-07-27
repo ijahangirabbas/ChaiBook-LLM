@@ -34,6 +34,9 @@ export const useAppStore = create<AppState>()(
           }
         } catch (err: any) {
           const is401 = err?.message?.includes('401') || err?.message?.includes('Unauthorized');
+          if (is401) {
+            get().logout();
+          }
           set({
             notebooksError: is401
               ? 'Please sign in to view and manage your notebooks.'
@@ -42,6 +45,7 @@ export const useAppStore = create<AppState>()(
           })
         }
       },
+
 
       // ─── Chat Sessions & Messages ──────────────────────────────────────
       chatSessions: [],
