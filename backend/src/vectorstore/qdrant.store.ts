@@ -74,17 +74,30 @@ export class QdrantVectorStore implements IVectorStore {
   async similaritySearch(query: string, notebookId: string, limit = 5, workspaceId?: string): Promise<VectorSearchResult[]> {
     const queryVector = await this.embeddings.embedQuery(query);
 
-    // Primary search: Try Qdrant with notebook_id filter
+    // Primary search: Qdrant with compound tenant + notebook filters
     try {
-      const searchResult = await qdrantClient.search(config.qdrantCollectionName, {
-        vector: queryVector,
-        limit: limit,
-        filter: {
+      const mustFilters: Array<Record<string, unknown>> = [
+        {
           should: [
             { key: 'metadata.notebook_id', match: { value: notebookId } },
             { key: 'notebook_id', match: { value: notebookId } },
           ],
         },
+      ];
+
+      if (workspaceId) {
+        mustFilters.push({
+          should: [
+            { key: 'metadata.workspace_id', match: { value: workspaceId } },
+            { key: 'workspace_id', match: { value: workspaceId } },
+          ],
+        });
+      }
+
+      const searchResult = await qdrantClient.search(config.qdrantCollectionName, {
+        vector: queryVector,
+        limit: limit,
+        filter: { must: mustFilters },
       });
 
       if (searchResult.length > 0) {
@@ -103,19 +116,19 @@ export class QdrantVectorStore implements IVectorStore {
       // Qdrant search failed, fall through to in-memory fallback search
     }
 
-    // In-memory Fallback Search: First filter by notebookId, then fallback to workspace or all chunks
+    // In-memory fallback: filter by notebook, then enforce workspace boundary
     let filtered = this.inMemoryFallbackStore.filter(
       (item) => item.document.metadata.notebook_id === notebookId
     );
 
-    if (filtered.length === 0 && workspaceId) {
-      filtered = this.inMemoryFallbackStore.filter(
-        (item) => !item.document.metadata.workspace_id || item.document.metadata.workspace_id === workspaceId
+    if (workspaceId) {
+      filtered = filtered.filter(
+        (item) => item.document.metadata.workspace_id === workspaceId
       );
     }
 
     if (filtered.length === 0) {
-      filtered = this.inMemoryFallbackStore;
+      return [];
     }
 
     const scored = filtered.map((item) => {

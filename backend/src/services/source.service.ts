@@ -3,8 +3,10 @@ import { LoaderFactory } from '../loaders/loader.factory';
 import { LoaderInput } from '../loaders/base.loader';
 import { vectorService } from './vector.service';
 import { statusService } from './status.service';
+import { s3Service } from './s3.service';
 import { SourceType } from '../types/source.types';
 import { prisma } from '../db/prisma.client';
+import { enqueueIngestionJob } from '../queue/ingestion.queue';
 
 export interface ProcessSourceParams {
   sourceId: string;
@@ -14,6 +16,7 @@ export interface ProcessSourceParams {
   title: string;
   url?: string;
   filePath?: string;
+  s3Key?: string;
   rawContent?: string;
   jobId?: string;
 }
@@ -21,9 +24,16 @@ export interface ProcessSourceParams {
 export class SourceService {
   async processAndIndexSource(params: ProcessSourceParams): Promise<void> {
     const { sourceId, notebookId, workspaceId = 'default', sourceType, title } = params;
+    let resolvedFilePath = params.filePath;
+    let tempDownloadPath: string | undefined;
 
     try {
       await statusService.updateStatus(sourceId, 'indexing', 20);
+
+      if (!resolvedFilePath && params.s3Key) {
+        tempDownloadPath = await s3Service.downloadToTempFile(params.s3Key);
+        resolvedFilePath = tempDownloadPath;
+      }
 
       const loader = LoaderFactory.getLoader(sourceType);
 
@@ -33,13 +43,12 @@ export class SourceService {
         sourceType,
         title,
         url: params.url,
-        filePath: params.filePath,
+        filePath: resolvedFilePath,
         rawContent: params.rawContent,
       };
 
       const documents = await loader.load(loaderInput);
 
-      // Enrich document metadata with workspaceId for tenant isolation
       documents.forEach((doc) => {
         doc.metadata = {
           ...doc.metadata,
@@ -50,7 +59,6 @@ export class SourceService {
       });
 
       await statusService.updateStatus(sourceId, 'indexing', 50);
-
       await statusService.updateStatus(sourceId, 'indexing', 80);
       await vectorService.indexDocuments(documents);
 
@@ -58,7 +66,7 @@ export class SourceService {
         try {
           fs.unlinkSync(params.filePath);
         } catch {
-          // ignore cleanup errors
+          // ignore local cleanup errors
         }
       }
 
@@ -68,12 +76,21 @@ export class SourceService {
       const errMsg = (error as Error).message || 'Unknown processing error';
       console.error(`❌ Error processing sourceId ${sourceId}:`, errMsg);
       await statusService.updateStatus(sourceId, 'error', 0, errMsg);
+      throw error;
+    } finally {
+      if (tempDownloadPath && fs.existsSync(tempDownloadPath)) {
+        try {
+          fs.unlinkSync(tempDownloadPath);
+        } catch {
+          // ignore temp cleanup errors
+        }
+      }
     }
   }
 
   async reindexSource(sourceId: string, workspaceId = 'default'): Promise<void> {
     const dbSource = await prisma.source.findFirst({
-      where: { id: sourceId, deletedAt: null },
+      where: { id: sourceId, workspaceId, deletedAt: null },
     });
 
     if (!dbSource) {
@@ -88,14 +105,12 @@ export class SourceService {
       sourceType,
       title: dbSource.title,
       url: dbSource.url || undefined,
+      s3Key: dbSource.s3Key || undefined,
     };
 
     await vectorService.deleteSourceVectors(sourceId);
     await statusService.updateStatus(sourceId, 'uploading', 0);
-
-    setImmediate(() => {
-      this.processAndIndexSource(processParams);
-    });
+    await enqueueIngestionJob(processParams);
   }
 
   async deleteSource(sourceId: string, workspaceId = 'default'): Promise<void> {

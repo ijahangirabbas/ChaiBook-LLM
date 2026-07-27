@@ -9,6 +9,7 @@ import { notebookRepository } from '../repositories/notebook.repository';
 import { sourceRepository } from '../repositories/source.repository';
 import { enqueueIngestionJob } from '../queue/ingestion.queue';
 import { ingestionJobService } from '../services/job.service';
+import { config } from '../config/env.config';
 
 export class SourceController {
   // POST /api/v1/notebooks/:notebookId/sources/upload-intent
@@ -92,9 +93,29 @@ export class SourceController {
       const title = req.body.title || (file ? file.originalname : url || 'Untitled Source');
 
       const sourceId = uuidv4();
+      let s3Key: string | undefined;
+
+      if (file) {
+        s3Key = `workspaces/${workspaceId}/notebooks/${notebookId}/sources/${sourceId}-${file.originalname}`;
+        const uploaded = await s3Service.uploadFile(
+          file.path,
+          s3Key,
+          file.mimetype || 'application/octet-stream'
+        );
+        if (!uploaded) {
+          if (config.nodeEnv === 'production') {
+            throw new Error('S3 upload failed — cannot persist file for ingestion in production.');
+          }
+          s3Key = undefined;
+        }
+      }
 
       // Initialize status and durable source record in DB
       await statusService.createStatus(sourceId, notebookId, title, sourceType, 'uploading', 10, workspaceId);
+
+      if (s3Key) {
+        await sourceRepository.updateSourceS3Key(sourceId, workspaceId, s3Key, file?.mimetype);
+      }
 
       // Enqueue job on BullMQ queue with transactional IngestionJob record
       const { jobId } = await enqueueIngestionJob({
@@ -104,7 +125,8 @@ export class SourceController {
         sourceType,
         title,
         url,
-        filePath: file?.path,
+        s3Key,
+        filePath: s3Key ? undefined : file?.path,
         rawContent: content,
       });
 

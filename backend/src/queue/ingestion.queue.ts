@@ -2,12 +2,14 @@ import { Queue, Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { sourceService, ProcessSourceParams } from '../services/source.service';
 import { ingestionJobService } from '../services/job.service';
+import { config } from '../config/env.config';
 
-const rawRedisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const rawRedisUrl = config.redisUrl;
 const isUpstash = rawRedisUrl.includes('upstash.io');
-const redisUrl = isUpstash && rawRedisUrl.startsWith('redis://')
-  ? rawRedisUrl.replace('redis://', 'rediss://')
-  : rawRedisUrl;
+const redisUrl =
+  isUpstash && rawRedisUrl.startsWith('redis://')
+    ? rawRedisUrl.replace('redis://', 'rediss://')
+    : rawRedisUrl;
 
 export const redisConnection = new IORedis(redisUrl, {
   maxRetriesPerRequest: null,
@@ -34,7 +36,12 @@ export const ingestionQueue = new Queue<ProcessSourceParams>(INGESTION_QUEUE_NAM
   },
 });
 
-export async function checkRedisConnection(): Promise<{ connected: boolean; status: string; url: string; error?: string }> {
+export async function checkRedisConnection(): Promise<{
+  connected: boolean;
+  status: string;
+  url: string;
+  error?: string;
+}> {
   try {
     if (redisConnection.status === 'wait' || redisConnection.status === 'close') {
       await redisConnection.connect();
@@ -58,40 +65,82 @@ export async function checkRedisConnection(): Promise<{ connected: boolean; stat
 export async function enqueueIngestionJob(params: ProcessSourceParams): Promise<{ jobId: string }> {
   const jobId = await ingestionJobService.createJob(params.sourceId);
 
-  try {
-    const redisCheck = await checkRedisConnection();
-    if (redisCheck.connected) {
-      await ingestionQueue.add(`ingest-${params.sourceId}`, { ...params, jobId }, { jobId });
-      return { jobId };
+  const redisCheck = await checkRedisConnection();
+  if (!redisCheck.connected) {
+    if (config.nodeEnv === 'production') {
+      throw new Error(
+        `Ingestion queue unavailable: Redis is not connected (${redisCheck.error || 'unknown error'})`
+      );
     }
-  } catch {
-    // Redis unavailable, fallback to async process execution
+
+    console.warn(
+      '⚠️ Redis unavailable in development — running ingestion inline (not suitable for production).'
+    );
+    setImmediate(async () => {
+      try {
+        await processIngestionPipeline(params, jobId);
+      } catch (err: any) {
+        console.error(`Development fallback ingestion failed for source ${params.sourceId}:`, err.message);
+      }
+    });
+    return { jobId };
   }
 
-  setImmediate(async () => {
-    try {
-      await processIngestionPipeline(params, jobId);
-    } catch (err: any) {
-      console.error(`Fallback ingestion failed for source ${params.sourceId}:`, err.message);
-    }
-  });
-
+  await ingestionQueue.add(`ingest-${params.sourceId}`, { ...params, jobId }, { jobId });
   return { jobId };
 }
 
 async function processIngestionPipeline(params: ProcessSourceParams, jobId: string) {
   const { sourceId } = params;
   try {
-    await ingestionJobService.recordStageEvent(jobId, sourceId, 'validating', 20, 'Validating source format and content parameters...');
-    await ingestionJobService.recordStageEvent(jobId, sourceId, 'extracting', 40, 'Extracting text content and document structure...');
-    await ingestionJobService.recordStageEvent(jobId, sourceId, 'chunking', 60, 'Splitting content into semantic passage chunks...');
-    await ingestionJobService.recordStageEvent(jobId, sourceId, 'embedding', 80, 'Generating vector embeddings and indexing in Qdrant...');
+    await ingestionJobService.recordStageEvent(
+      jobId,
+      sourceId,
+      'validating',
+      20,
+      'Validating source format and content parameters...'
+    );
+    await ingestionJobService.recordStageEvent(
+      jobId,
+      sourceId,
+      'extracting',
+      40,
+      'Extracting text content and document structure...'
+    );
+    await ingestionJobService.recordStageEvent(
+      jobId,
+      sourceId,
+      'chunking',
+      60,
+      'Splitting content into semantic passage chunks...'
+    );
+    await ingestionJobService.recordStageEvent(
+      jobId,
+      sourceId,
+      'embedding',
+      80,
+      'Generating vector embeddings and indexing in Qdrant...'
+    );
 
     await sourceService.processAndIndexSource(params);
 
-    await ingestionJobService.recordStageEvent(jobId, sourceId, 'ready', 100, 'Source processing and vector indexing complete.');
+    await ingestionJobService.recordStageEvent(
+      jobId,
+      sourceId,
+      'ready',
+      100,
+      'Source processing and vector indexing complete.'
+    );
   } catch (err: any) {
-    await ingestionJobService.recordStageEvent(jobId, sourceId, 'failed', 0, err.message || 'Ingestion pipeline failed.', 'PROCESSING_ERROR', err.stack);
+    await ingestionJobService.recordStageEvent(
+      jobId,
+      sourceId,
+      'failed',
+      0,
+      err.message || 'Ingestion pipeline failed.',
+      'PROCESSING_ERROR',
+      err.stack
+    );
     throw err;
   }
 }
@@ -115,7 +164,14 @@ export function startIngestionWorker(): Worker<ProcessSourceParams> | null {
     worker.on('failed', async (job, err) => {
       console.error(`💥 BullMQ Job ${job?.id} failed with error:`, err.message);
       if (job?.data?.sourceId && job?.data?.jobId) {
-        await ingestionJobService.recordStageEvent(job.data.jobId, job.data.sourceId, 'failed', 0, err.message, 'WORKER_FAILURE');
+        await ingestionJobService.recordStageEvent(
+          job.data.jobId,
+          job.data.sourceId,
+          'failed',
+          0,
+          err.message,
+          'WORKER_FAILURE'
+        );
       }
     });
 

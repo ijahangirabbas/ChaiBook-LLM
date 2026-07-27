@@ -104,6 +104,22 @@ export class SourceRepository {
     };
   }
 
+  async updateSourceS3Key(
+    sourceId: string,
+    workspaceId: string,
+    s3Key: string,
+    contentType?: string
+  ): Promise<boolean> {
+    const updated = await prisma.source.updateMany({
+      where: { id: sourceId, workspaceId, deletedAt: null },
+      data: {
+        s3Key,
+        ...(contentType ? { contentType } : {}),
+      },
+    });
+    return updated.count > 0;
+  }
+
   async updateSourceStatus(
     sourceId: string,
     workspaceId: string,

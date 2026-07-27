@@ -73,10 +73,11 @@ export function AddSourceModal() {
 
       if (selectedFile) {
         const res = await ApiService.uploadSourceFile(targetNotebookId, selectedFile)
+        const fileType = ApiService.detectSourceType(selectedFile.name, undefined, selectedType || undefined)
         addSource({
           id: res.sourceId,
           notebookId: targetNotebookId,
-          type: selectedType,
+          type: fileType,
           title: selectedFile.name,
           domain: selectedFile.name,
           number: Math.floor(Math.random() * 10) + 1,
@@ -84,10 +85,11 @@ export function AddSourceModal() {
           indexingProgress: 25,
         })
       } else if (urlInput.trim()) {
+        const detectedType = ApiService.detectSourceType(undefined, urlInput.trim(), selectedType || undefined)
         const res = await ApiService.addSourceUrl(
           targetNotebookId,
           urlInput.trim(),
-          selectedType === 'youtube' ? 'youtube' : 'webpage'
+          detectedType === 'youtube' ? 'youtube' : 'webpage'
         )
         let domainStr = 'webpage'
         try {
@@ -98,7 +100,7 @@ export function AddSourceModal() {
         addSource({
           id: res.sourceId,
           notebookId: targetNotebookId,
-          type: selectedType,
+          type: detectedType,
           title: urlInput.trim(),
           url: urlInput.trim(),
           domain: domainStr,

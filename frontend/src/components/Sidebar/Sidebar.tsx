@@ -197,8 +197,10 @@ function NotebookSidebar() {
   } = useAppStore()
 
   // Sessions for current active notebook
-  const currentNotebookId = activeNotebookId || 'nb-1'
-  const activeNotebookSessions = chatSessions.filter((s) => s.notebookId === currentNotebookId)
+  const currentNotebookId = activeNotebookId
+  const activeNotebookSessions = currentNotebookId
+    ? chatSessions.filter((s) => s.notebookId === currentNotebookId)
+    : []
 
   const handleNavClick = (item: (typeof NOTEBOOK_NAV_ITEMS)[0]) => {
     if (item.id === 'sources') {
@@ -316,8 +318,9 @@ function NotebookSidebar() {
                       </button>
                     ))}
                     <button
-                      onClick={() => createChatSession(currentNotebookId)}
-                      className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-primary font-semibold hover:bg-primary/5 transition-colors flex items-center gap-1.5"
+                      onClick={() => currentNotebookId && createChatSession(currentNotebookId)}
+                      disabled={!currentNotebookId}
+                      className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-primary font-semibold hover:bg-primary/5 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Plus className="w-3 h-3 shrink-0" />
                       + New Chat Thread

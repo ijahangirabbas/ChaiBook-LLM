@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import { v4 as uuidv4 } from 'uuid';
 import apiV1Routes from './routes/v1';
 import { errorHandler } from './middlewares/error.middleware';
 import { checkRedisConnection } from './queue/ingestion.queue';
@@ -7,24 +9,41 @@ import { config } from './config/env.config';
 
 const app = express();
 
-// Middlewares
+// Security headers
+app.use(
+  helmet({
+    contentSecurityPolicy: config.nodeEnv === 'production' ? undefined : false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
+// Correlation ID & Request Tracing Middleware
+app.use((req, res, next) => {
+  const requestId = (req.headers['x-request-id'] as string) || uuidv4();
+  req.headers['x-request-id'] = requestId;
+  res.setHeader('x-request-id', requestId);
+  next();
+});
+
+// Strict CORS in production; permissive localhost in development
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
-      if (
+
+      const isAllowed =
         config.corsOrigins.includes(origin) ||
-        config.corsOrigins.includes('*') ||
-        origin.endsWith('.vercel.app') ||
-        origin.endsWith('jahangirabbas.com')
-      ) {
+        (config.nodeEnv !== 'production' &&
+          (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')));
+
+      if (isAllowed) {
         return callback(null, true);
       }
+
       return callback(new Error(`CORS policy error: Origin ${origin} is not allowed`));
     },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'x-request-id'],
     credentials: true,
   })
 );

@@ -1,4 +1,4 @@
-import type { Notebook, SourceIndexingStatus } from '../types';
+import type { Notebook, SourceIndexingStatus, SourceType } from '../types';
 
 declare global {
   interface Window {
@@ -26,13 +26,20 @@ export class ApiService {
       if (window.Clerk?.session) {
         token = await window.Clerk.session.getToken();
       }
-    } catch (e) {}
+    } catch {
+      // Clerk session unavailable
+    }
 
-    const bearerToken = token || 'dev-token';
+    if (!token) {
+      if (import.meta.env.PROD) {
+        throw new Error('Authentication required: no valid session token available.');
+      }
+      token = 'dev-token';
+    }
 
     return {
       ...(json ? { 'Content-Type': 'application/json' } : {}),
-      Authorization: `Bearer ${bearerToken}`,
+      Authorization: `Bearer ${token}`,
     };
   }
 
@@ -77,6 +84,21 @@ export class ApiService {
     }));
   }
 
+  static detectSourceType(title?: string, url?: string, rawType?: string): SourceType {
+    const lowerTitle = (title || '').toLowerCase();
+    const lowerUrl = (url || '').toLowerCase();
+    const lowerType = (rawType || '').toLowerCase();
+
+    if (lowerTitle.endsWith('.pdf') || lowerType === 'pdf') return 'pdf';
+    if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be') || lowerType === 'youtube') return 'youtube';
+    if (lowerTitle.endsWith('.srt')) return 'srt';
+    if (lowerTitle.endsWith('.vtt')) return 'vtt';
+    if (lowerTitle.endsWith('.md') || lowerTitle.endsWith('.markdown') || lowerType === 'markdown') return 'markdown';
+    if (lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://') || lowerType === 'webpage') return 'webpage';
+
+    return (lowerType as SourceType) || 'text';
+  }
+
   static async getNotebookById(id: string): Promise<{ notebook: Notebook; sources: any[] }> {
     const res = await fetch(`${API_BASE_URL}/notebooks/${id}`, { headers: await this.headers() });
     const json = await this.parseJson(res);
@@ -102,7 +124,7 @@ export class ApiService {
       return {
         id: s.id,
         notebookId: s.notebookId || id,
-        type: (s.type || 'text').toLowerCase(),
+        type: ApiService.detectSourceType(s.title, s.url, s.type),
         title: s.title || 'Untitled Source',
         url: s.url,
         domain: domainStr,
@@ -245,14 +267,25 @@ export class ApiService {
     message: string,
     onChunk: (chunk: string) => void,
     onComplete: () => void,
-    onError: (err: any) => void,
-    onCitations?: (citations: any[]) => void
+    onError: (err: unknown) => void,
+    onCitations?: (citations: unknown[]) => void,
+    options?: { signal?: AbortSignal; timeoutMs?: number }
   ): Promise<void> {
+    const controller = new AbortController();
+    const timeoutMs = options?.timeoutMs ?? 120_000;
+    const timeoutId = setTimeout(() => {
+      controller.abort(new DOMException('Chat stream timed out', 'TimeoutError'));
+    }, timeoutMs);
+
+    const relayAbort = () => controller.abort(options?.signal?.reason);
+    options?.signal?.addEventListener('abort', relayAbort);
+
     try {
       const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/chat`, {
         method: 'POST',
         headers: await this.headers(true),
         body: JSON.stringify({ message }),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -267,6 +300,11 @@ export class ApiService {
       let buffer = '';
 
       while (true) {
+        if (controller.signal.aborted) {
+          await reader.cancel().catch(() => undefined);
+          throw controller.signal.reason || new Error('Stream cancelled');
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -276,34 +314,40 @@ export class ApiService {
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (trimmed.startsWith('data:')) {
-            const dataStr = trimmed.slice(5).trim();
-            if (dataStr === '[DONE]') {
+          if (!trimmed.startsWith('data:')) continue;
+
+          const dataStr = trimmed.slice(5).trim();
+          if (dataStr === '[DONE]') {
+            onComplete();
+            return;
+          }
+
+          try {
+            const parsed = JSON.parse(dataStr);
+            if (parsed.type === 'citations' && Array.isArray(parsed.sources)) {
+              if (onCitations) onCitations(parsed.sources);
+            } else if (parsed.type === 'token.delta' && (parsed.text || parsed.token || parsed.content)) {
+              onChunk(parsed.text || parsed.token || parsed.content);
+            } else if (parsed.type === 'completed' || parsed.type === 'done') {
               onComplete();
               return;
+            } else if (parsed.type === 'failed' || parsed.type === 'error') {
+              onError(new Error(parsed.error || parsed.message || 'Stream failed'));
+              return;
+            } else if (parsed.token || parsed.content || parsed.text) {
+              onChunk(parsed.token || parsed.content || parsed.text);
             }
-            try {
-              const parsed = JSON.parse(dataStr);
-              if (parsed.type === 'citations' && Array.isArray(parsed.sources)) {
-                if (onCitations) onCitations(parsed.sources);
-              } else if (parsed.type === 'completed' || parsed.type === 'done') {
-                onComplete();
-                return;
-              } else if (parsed.type === 'failed' || parsed.type === 'error') {
-                onError(new Error(parsed.error || parsed.message || 'Stream failed'));
-                return;
-              } else if (parsed.token || parsed.content || parsed.text) {
-                onChunk(parsed.token || parsed.content || parsed.text);
-              }
-            } catch {
-              onChunk(dataStr);
-            }
+          } catch {
+            if (dataStr) onChunk(dataStr);
           }
         }
       }
       onComplete();
     } catch (err) {
       onError(err);
+    } finally {
+      clearTimeout(timeoutId);
+      options?.signal?.removeEventListener('abort', relayAbort);
     }
   }
 }

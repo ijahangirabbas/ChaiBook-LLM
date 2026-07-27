@@ -89,7 +89,10 @@ export const useAppStore = create<AppState>()(
           notebooks: [],
           sources: [],
           chatSessions: [],
+          notebooksError: null,
+          loadingNotebooks: false,
         })
+        useAppStore.persist.clearStorage()
       },
 
       toggleTheme: () => {
@@ -284,15 +287,8 @@ export const useAppStore = create<AppState>()(
                 ),
               }));
             }
-          } catch {
-            // Fallback for demo mode: auto-complete pending sources to ready 100% after delay
-            set((st) => ({
-              sources: st.sources.map((s) =>
-                s.id === source.id
-                  ? { ...s, status: 'ready', indexingProgress: 100 }
-                  : s
-              ),
-            }));
+          } catch (err) {
+            console.warn(`Failed to poll source status for ${source.id}:`, err);
           }
         }
       },
@@ -362,10 +358,6 @@ export const useAppStore = create<AppState>()(
       name: 'chaibook-storage',
       partialize: (state) => ({
         theme: state.theme,
-        isAuthenticated: state.isAuthenticated,
-        user: state.user,
-        activeNotebookId: state.activeNotebookId,
-        notebooks: state.notebooks,
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.theme === 'dark') {
