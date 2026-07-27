@@ -27,6 +27,7 @@
     "@langchain/textsplitters": "^0.1.0",
     "@prisma/client": "^5.16.1",
     "@qdrant/js-client-rest": "^1.11.0",
+    "@supabase/supabase-js": "^2.110.8",
     "@types/jsonwebtoken": "^9.0.10",
     "bullmq": "^5.8.7",
     "cheerio": "^1.0.0",

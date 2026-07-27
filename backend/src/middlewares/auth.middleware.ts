@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { config } from '../config/env.config';
 import { prisma } from '../db/prisma.client';
+import { supabaseAdmin, isSupabaseAdminConfigured } from '../lib/supabase.admin';
 
 export interface AuthenticatedUser {
   id: string;
@@ -16,9 +17,9 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /**
- * Enterprise Production Auth Middleware:
- * Strictly verifies JWT tokens against Supabase JWT secret in production.
- * Rejects unauthenticated requests with 401 Unauthorized.
+ * Modern Enterprise Supabase Auth Middleware:
+ * Uses Supabase Auth Service (`supabaseAdmin.auth.getUser(token)`) per latest official Supabase docs.
+ * Validates expiration, signature, user active status, and token claims.
  */
 export const authenticateUser = async (
   req: AuthenticatedRequest,
@@ -46,8 +47,16 @@ export const authenticateUser = async (
     });
   }
 
-  // 2. Development/Demo Mode Convenience Token Support
+  // 2. Development/Test Mode Convenience Token Support
   if (token === 'dev-token') {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Unauthorized: Dev tokens are disabled in production environment',
+      });
+    }
+
     req.user = {
       id: 'dev-user-id',
       supabaseSubject: 'dev-sub-123',
@@ -58,44 +67,68 @@ export const authenticateUser = async (
     return next();
   }
 
-  // 3. JWT Verification & Claim Extraction
+  // 3. Official Supabase Auth Service Verification
   try {
-    let decoded: JwtPayload | null = null;
+    let sub = '';
+    let email = '';
+    let name = '';
+    let role = 'authenticated';
 
-    if (config.supabaseJwtSecret) {
-      try {
-        decoded = jwt.verify(token, config.supabaseJwtSecret) as JwtPayload;
-      } catch (err: any) {
-        if (process.env.NODE_ENV === 'production') {
-          return res.status(401).json({
-            success: false,
-            code: 'INVALID_TOKEN',
-            message: 'Unauthorized: Invalid or expired token signature',
-          });
+    if (isSupabaseAdminConfigured && supabaseAdmin) {
+      const { data, error } = await supabaseAdmin.auth.getUser(token);
+
+      if (error || !data.user) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_TOKEN',
+          message: error?.message || 'Unauthorized: Invalid or expired token',
+        });
+      }
+
+      sub = data.user.id;
+      email = data.user.email || `${sub}@auth.supabase.local`;
+      name = data.user.user_metadata?.full_name || data.user.user_metadata?.name || email.split('@')[0];
+      role = data.user.role || 'authenticated';
+    } else {
+      // Fallback JWT Verification if Supabase URL / Service Role Key is omitted
+      let decoded: JwtPayload | null = null;
+
+      if (config.supabaseJwtSecret) {
+        try {
+          decoded = jwt.verify(token, config.supabaseJwtSecret) as JwtPayload;
+        } catch (err: any) {
+          if (process.env.NODE_ENV === 'production') {
+            return res.status(401).json({
+              success: false,
+              code: 'INVALID_TOKEN',
+              message: 'Unauthorized: Invalid or expired token signature',
+            });
+          }
+          decoded = jwt.decode(token) as JwtPayload;
         }
+      } else if (process.env.NODE_ENV === 'production') {
+        return res.status(401).json({
+          success: false,
+          code: 'AUTH_CONFIG_ERROR',
+          message: 'Unauthorized: Server authentication secret is missing',
+        });
+      } else {
         decoded = jwt.decode(token) as JwtPayload;
       }
-    } else if (process.env.NODE_ENV === 'production') {
-      return res.status(401).json({
-        success: false,
-        code: 'AUTH_CONFIG_ERROR',
-        message: 'Unauthorized: Server authentication secret is missing',
-      });
-    } else {
-      decoded = jwt.decode(token) as JwtPayload;
-    }
 
-    if (!decoded || !decoded.sub) {
-      return res.status(401).json({
-        success: false,
-        code: 'INVALID_TOKEN_CLAIMS',
-        message: 'Unauthorized: Token is missing required subject claim',
-      });
-    }
+      if (!decoded || !decoded.sub) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_TOKEN_CLAIMS',
+          message: 'Unauthorized: Token is missing required subject claim',
+        });
+      }
 
-    const sub = decoded.sub;
-    const email = decoded.email || `${sub}@auth.supabase.local`;
-    const name = decoded.user_metadata?.full_name || decoded.name || email.split('@')[0];
+      sub = decoded.sub;
+      email = decoded.email || `${sub}@auth.supabase.local`;
+      name = decoded.user_metadata?.full_name || decoded.name || email.split('@')[0];
+      role = typeof decoded.role === 'string' ? decoded.role : 'authenticated';
+    }
 
     // 4. Provision or Fetch Durable User & Workspace in PostgreSQL
     let user = null;
@@ -118,7 +151,7 @@ export const authenticateUser = async (
             supabaseSubject: sub,
             email,
             name,
-            provider: decoded.app_metadata?.provider || 'google',
+            provider: 'google',
             memberships: {
               create: {
                 role: 'OWNER',
@@ -151,7 +184,7 @@ export const authenticateUser = async (
       supabaseSubject: sub,
       email,
       workspaceId: primaryWorkspaceId,
-      role: typeof decoded.role === 'string' ? decoded.role : undefined,
+      role,
     };
 
     return next();
@@ -159,7 +192,7 @@ export const authenticateUser = async (
     return res.status(401).json({
       success: false,
       code: 'AUTH_FAILED',
-      message: 'Unauthorized: Authentication token parsing failed',
+      message: 'Unauthorized: Authentication token validation failed',
     });
   }
 };
