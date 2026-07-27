@@ -15,7 +15,8 @@
     "test:postgres": "ts-node tests/test-postgres.ts",
     "test:redis": "ts-node tests/test-redis.ts",
     "test:all": "ts-node tests/test-all.ts",
-    "test:api": "ts-node tests/api.test.ts"
+    "test:api": "ts-node tests/api.test.ts",
+    "test:jwt": "ts-node tests/test-jwt.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.614.0",
