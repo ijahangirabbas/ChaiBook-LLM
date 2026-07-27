@@ -212,6 +212,7 @@ export interface AppState {
   updateSourceStatus: (sourceId: string, status: SourceIndexingStatus, progress?: number) => void
   pollPendingSources: () => Promise<void>
   fetchNotebookSources: (notebookId: string) => Promise<void>
+  fetchNotebookChatHistory: (notebookId: string) => Promise<void>
 }
 
 // ─── Add Source Modal Types ───────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LogOut, Settings, User, X, Check, Moon, Sun } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { useClerk } from '@clerk/clerk-react'
+import { useClerk, useUser } from '@clerk/clerk-react'
 import { useAppStore } from '../../store/useAppStore'
 import { cn } from '../../lib/utils'
 
@@ -14,9 +14,22 @@ export function UserMenu() {
   const [saved, setSaved] = useState(false)
 
   const ref = useRef<HTMLDivElement>(null)
-  const { user, logout } = useAppStore()
+  const { user: storeUser, logout } = useAppStore()
+  const { user: clerkUser } = useUser()
   const { signOut } = useClerk()
   const navigate = useNavigate()
+
+  const realEmail =
+    clerkUser?.primaryEmailAddress?.emailAddress ||
+    clerkUser?.emailAddresses?.[0]?.emailAddress ||
+    storeUser?.email ||
+    'user@chaibook.ai'
+
+  const realName =
+    clerkUser?.fullName ||
+    [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(' ') ||
+    storeUser?.name ||
+    'ChaiBook User'
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -41,7 +54,7 @@ export function UserMenu() {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const initials = user?.name?.charAt(0).toUpperCase() || 'M'
+  const initials = realName?.charAt(0).toUpperCase() || 'M'
 
   return (
     <>
@@ -83,10 +96,10 @@ export function UserMenu() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-text-primary dark:text-text-primary-dark truncate">
-                      {user?.name}
+                      {realName}
                     </p>
                     <p className="text-xs text-text-muted dark:text-text-muted-dark truncate">
-                      {user?.email}
+                      {realEmail}
                     </p>
                   </div>
                 </div>
@@ -183,8 +196,8 @@ export function UserMenu() {
                       <input
                         type="text"
                         disabled
-                        value={user?.name || 'Researcher User'}
-                        className="w-full px-3 py-2 bg-background dark:bg-background-dark border border-border dark:border-border-dark rounded-md text-sm text-text-primary"
+                        value={realName}
+                        className="w-full px-3 py-2 bg-background dark:bg-background-dark border border-border dark:border-border-dark rounded-md text-sm text-text-primary dark:text-text-primary-dark"
                       />
                     </div>
                     <div>
@@ -192,8 +205,8 @@ export function UserMenu() {
                       <input
                         type="email"
                         disabled
-                        value={user?.email || 'user@chaibook.ai'}
-                        className="w-full px-3 py-2 bg-background dark:bg-background-dark border border-border dark:border-border-dark rounded-md text-sm text-text-primary"
+                        value={realEmail}
+                        className="w-full px-3 py-2 bg-background dark:bg-background-dark border border-border dark:border-border-dark rounded-md text-sm text-text-primary dark:text-text-primary-dark"
                       />
                     </div>
                     <div>
@@ -201,7 +214,7 @@ export function UserMenu() {
                       <input
                         type="text"
                         disabled
-                        value={user?.workspaceId || 'default'}
+                        value={storeUser?.workspaceId || 'default'}
                         className="w-full px-3 py-2 bg-background dark:bg-background-dark border border-border dark:border-border-dark rounded-md text-sm text-text-primary font-mono text-xs"
                       />
                     </div>

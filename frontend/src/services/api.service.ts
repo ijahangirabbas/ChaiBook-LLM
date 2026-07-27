@@ -210,6 +210,35 @@ export class ApiService {
     await this.parseJson(res);
   }
 
+  // ─── Chat History & Conversation Endpoints ────────────────────────────────
+  static async getNotebookConversations(notebookId: string): Promise<any[]> {
+    const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/conversations`, { headers: await this.headers() });
+    const json = await this.parseJson(res);
+    return json.data || [];
+  }
+
+  static async getConversationMessages(conversationId: string): Promise<any[]> {
+    const res = await fetch(`${API_BASE_URL}/conversations/${conversationId}/messages`, { headers: await this.headers() });
+    const json = await this.parseJson(res);
+    const msgs = json.data || [];
+    return msgs.map((m: any) => ({
+      id: m.id,
+      role: (m.role || 'user').toLowerCase(),
+      content: m.content,
+      timestamp: new Date(m.createdAt || Date.now()),
+      sources: m.sources || (m.citations && m.citations.length > 0
+        ? m.citations.map((c: any, idx: number) => ({
+            id: c.sourceId || c.id,
+            title: c.title || 'Cited Source',
+            number: idx + 1,
+            retrievedChunk: c.snippet,
+            pageNumber: c.page,
+            similarity: c.score,
+          }))
+        : undefined),
+    }));
+  }
+
   // ─── SSE RAG Chat Endpoint ───────────────────────────────────────────────
   static async streamRAGChat(
     notebookId: string,

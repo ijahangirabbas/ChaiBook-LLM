@@ -309,8 +309,52 @@ export const useAppStore = create<AppState>()(
               sources: [...fetchedSources, ...extraSources],
             };
           });
+          get().fetchNotebookChatHistory(notebookId);
         } catch {
           // ignore error on fetch sources
+        }
+      },
+
+      fetchNotebookChatHistory: async (notebookId: string) => {
+        try {
+          const convs = await ApiService.getNotebookConversations(notebookId);
+          if (!convs || convs.length === 0) return;
+
+          const sessions: any[] = [];
+          let activeMessages: any[] = [];
+          let activeSessionId = get().activeChatSessionId;
+
+          for (let i = 0; i < convs.length; i++) {
+            const conv = convs[i];
+            const msgs = await ApiService.getConversationMessages(conv.id);
+            const sessionItem = {
+              id: conv.id,
+              notebookId,
+              title: conv.title || `Chat ${i + 1}`,
+              createdAt: new Date(conv.createdAt || Date.now()),
+              updatedAt: new Date(conv.updatedAt || Date.now()),
+              messages: msgs,
+            };
+            sessions.push(sessionItem);
+
+            if (i === 0 && (!activeSessionId || !sessions.some((s) => s.id === activeSessionId))) {
+              activeSessionId = conv.id;
+              activeMessages = msgs;
+            } else if (conv.id === activeSessionId) {
+              activeMessages = msgs;
+            }
+          }
+
+          set((state) => {
+            const otherSessions = state.chatSessions.filter((s) => s.notebookId !== notebookId);
+            return {
+              chatSessions: [...sessions, ...otherSessions],
+              activeChatSessionId: activeSessionId || sessions[0]?.id || state.activeChatSessionId,
+              messages: activeMessages.length > 0 ? activeMessages : state.messages,
+            };
+          });
+        } catch {
+          // ignore fetch chat history error
         }
       },
     }),

@@ -36,8 +36,21 @@ export class QdrantVectorStore implements IVectorStore {
         payload: {
           pageContent: doc.pageContent,
           metadata: doc.metadata,
+          notebook_id: doc.metadata.notebook_id,
+          workspace_id: doc.metadata.workspace_id,
+          source_id: doc.metadata.source_id,
+          title: doc.metadata.title,
         },
       }));
+
+      // Also store in memory fallback store for instant local search
+      splitDocs.forEach((doc, index) => {
+        this.inMemoryFallbackStore.push({
+          id: uuidv4(),
+          vector: vectors[index],
+          document: doc,
+        });
+      });
 
       await qdrantClient.upsert(config.qdrantCollectionName, {
         wait: true,
@@ -61,61 +74,60 @@ export class QdrantVectorStore implements IVectorStore {
   async similaritySearch(query: string, notebookId: string, limit = 5, workspaceId?: string): Promise<VectorSearchResult[]> {
     const queryVector = await this.embeddings.embedQuery(query);
 
-    const mustFilters: any[] = [
-      {
-        key: 'metadata.notebook_id',
-        match: {
-          value: notebookId,
-        },
-      },
-    ];
-
-    if (workspaceId) {
-      mustFilters.push({
-        key: 'metadata.workspace_id',
-        match: {
-          value: workspaceId,
-        },
-      });
-    }
-
+    // Primary search: Try Qdrant with notebook_id filter
     try {
       const searchResult = await qdrantClient.search(config.qdrantCollectionName, {
         vector: queryVector,
         limit: limit,
         filter: {
-          must: mustFilters,
+          should: [
+            { key: 'metadata.notebook_id', match: { value: notebookId } },
+            { key: 'notebook_id', match: { value: notebookId } },
+          ],
         },
       });
 
-      return searchResult.map((hit) => {
-        const payload = hit.payload as { pageContent: string; metadata: Record<string, any> };
-        return {
-          document: new Document({
-            pageContent: payload.pageContent,
-            metadata: payload.metadata,
-          }),
-          score: hit.score,
-        };
-      });
-    } catch (qdrantError) {
-      console.warn(`⚠️ Searching in memory fallback due to Qdrant connection issue: ${(qdrantError as Error).message}`);
-
-      const filtered = this.inMemoryFallbackStore.filter(
-        (item) => item.document.metadata.notebook_id === notebookId && (!workspaceId || item.document.metadata.workspace_id === workspaceId)
-      );
-
-      const scored = filtered.map((item) => {
-        const score = this.cosineSimilarity(queryVector, item.vector);
-        return {
-          document: item.document,
-          score,
-        };
-      });
-
-      scored.sort((a, b) => b.score - a.score);
-      return scored.slice(0, limit);
+      if (searchResult.length > 0) {
+        return searchResult.map((hit) => {
+          const payload = hit.payload as { pageContent: string; metadata: Record<string, any> };
+          return {
+            document: new Document({
+              pageContent: payload.pageContent,
+              metadata: payload.metadata || payload,
+            }),
+            score: hit.score,
+          };
+        });
+      }
+    } catch {
+      // Qdrant search failed, fall through to in-memory fallback search
     }
+
+    // In-memory Fallback Search: First filter by notebookId, then fallback to workspace or all chunks
+    let filtered = this.inMemoryFallbackStore.filter(
+      (item) => item.document.metadata.notebook_id === notebookId
+    );
+
+    if (filtered.length === 0 && workspaceId) {
+      filtered = this.inMemoryFallbackStore.filter(
+        (item) => !item.document.metadata.workspace_id || item.document.metadata.workspace_id === workspaceId
+      );
+    }
+
+    if (filtered.length === 0) {
+      filtered = this.inMemoryFallbackStore;
+    }
+
+    const scored = filtered.map((item) => {
+      const score = this.cosineSimilarity(queryVector, item.vector);
+      return {
+        document: item.document,
+        score,
+      };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit);
   }
 
   async deleteBySourceId(sourceId: string): Promise<void> {

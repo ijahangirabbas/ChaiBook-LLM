@@ -11,13 +11,22 @@ export default function App() {
     if (!isLoaded) return
 
     if (isSignedIn && user) {
-      const email = user.primaryEmailAddress?.emailAddress || ''
-      const name = user.fullName || user.firstName || email.split('@')[0] || 'User'
+      const email =
+        user.primaryEmailAddress?.emailAddress ||
+        user.emailAddresses?.[0]?.emailAddress ||
+        (user.externalAccounts?.[0] as any)?.emailAddress ||
+        ''
+
+      const name =
+        user.fullName ||
+        [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+        (email ? email.split('@')[0] : 'User')
+
       login({
         id: user.id,
         name,
         email,
-        avatar: user.imageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
+        avatar: user.imageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email || user.id}`,
         plan: 'pro',
         storage: { used: 1.2, total: 10 },
       })
@@ -34,7 +43,7 @@ export default function App() {
       })
       fetchNotebooksFromApi()
     }
-  }, [isLoaded, isSignedIn, user, login, fetchNotebooksFromApi])
+  }, [isLoaded, isSignedIn, user, login, fetchNotebooksFromApi, isAuthenticated])
 
   return <Router />
 }
