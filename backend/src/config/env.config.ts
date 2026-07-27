@@ -7,7 +7,7 @@ export const config = {
   qdrantUrl: process.env.QDRANT_URL || 'http://localhost:6333',
   qdrantApiKey: process.env.QDRANT_API_KEY || undefined,
   qdrantCollectionName: process.env.QDRANT_COLLECTION_NAME || 'chaibook_sources',
-  embeddingModel: 'text-embedding-3-small',
+  embeddingModel: process.env.EMBEDDING_MODEL || 'jina-embeddings-v5-text-small',
   chatModel: 'gpt-4o',
   clerkSecretKey: process.env.CLERK_SECRET_KEY || '',
   clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY || process.env.VITE_CLERK_PUBLISHABLE_KEY || '',

@@ -9,7 +9,7 @@ export class JinaEmbeddings extends Embeddings {
   constructor(fields?: { apiKey?: string; modelName?: string }) {
     super({});
     this.apiKey = fields?.apiKey || process.env.JINA_API_KEY || '';
-    this.modelName = fields?.modelName || 'jina-embeddings-v2-base-en';
+    this.modelName = fields?.modelName || process.env.JINA_EMBEDDING_MODEL || 'jina-embeddings-v5-text-small';
   }
 
   async embedDocuments(texts: string[]): Promise<number[][]> {
@@ -45,10 +45,11 @@ export class JinaEmbeddings extends Embeddings {
 
 export function getEmbeddingsProvider(): Embeddings {
   const provider = (process.env.EMBEDDING_PROVIDER || (process.env.JINA_API_KEY ? 'jina' : 'openai')).toLowerCase();
+  const jinaModel = process.env.JINA_EMBEDDING_MODEL || 'jina-embeddings-v5-text-small';
 
   if (provider === 'jina') {
-    console.log('⚡ Using Jina Embeddings API (jina-embeddings-v2-base-en)...');
-    return new JinaEmbeddings();
+    console.log(`⚡ Using Jina Embeddings API (${jinaModel})...`);
+    return new JinaEmbeddings({ modelName: jinaModel });
   }
 
   return new OpenAIEmbeddings({
