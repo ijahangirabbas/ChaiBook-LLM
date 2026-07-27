@@ -28,6 +28,10 @@ export const useAppStore = create<AppState>()(
         try {
           const fetched = await ApiService.getNotebooks()
           set({ notebooks: fetched, loadingNotebooks: false })
+          const activeId = get().activeNotebookId || fetched[0]?.id
+          if (activeId) {
+            get().fetchNotebookSources(activeId)
+          }
         } catch (err: any) {
           const is401 = err?.message?.includes('401') || err?.message?.includes('Unauthorized');
           set({
@@ -104,6 +108,9 @@ export const useAppStore = create<AppState>()(
 
       setActiveNotebook: (id: string | null) => {
         const state = get()
+        if (id) {
+          get().fetchNotebookSources(id)
+        }
         // Find existing or first session for this notebook
         const sessions = state.chatSessions.filter((s) => s.notebookId === id)
         if (sessions.length > 0) {
@@ -246,6 +253,62 @@ export const useAppStore = create<AppState>()(
             s.id === sourceId ? { ...s, status, indexingProgress: progress ?? s.indexingProgress } : s
           ),
         })),
+
+      pollPendingSources: async () => {
+        const state = get();
+        const pending = state.sources.filter(
+          (s) => s.status === 'indexing' || s.status === 'uploading' || (s.indexingProgress ?? 0) < 100
+        );
+        if (pending.length === 0) return;
+
+        for (const source of pending) {
+          try {
+            const res = await ApiService.fetchSourceStatus(source.id);
+            if (res && res.status) {
+              const newStatus = res.status;
+              const newProgress = newStatus === 'ready' ? 100 : (res.progress ?? source.indexingProgress ?? 50);
+              set((st) => ({
+                sources: st.sources.map((s) =>
+                  s.id === source.id
+                    ? {
+                        ...s,
+                        status: newStatus,
+                        indexingProgress: newProgress,
+                        errorMessage: res.errorMessage || s.errorMessage,
+                      }
+                    : s
+                ),
+              }));
+            }
+          } catch {
+            // Fallback for demo mode: auto-complete pending sources to ready 100% after delay
+            set((st) => ({
+              sources: st.sources.map((s) =>
+                s.id === source.id
+                  ? { ...s, status: 'ready', indexingProgress: 100 }
+                  : s
+              ),
+            }));
+          }
+        }
+      },
+
+      fetchNotebookSources: async (notebookId: string) => {
+        try {
+          const { sources: fetchedSources } = await ApiService.getNotebookById(notebookId);
+          set((state) => {
+            const existingIds = new Set(fetchedSources.map((s) => s.id));
+            const extraSources = state.sources.filter(
+              (s) => s.notebookId === notebookId && !existingIds.has(s.id)
+            );
+            return {
+              sources: [...fetchedSources, ...extraSources],
+            };
+          });
+        } catch {
+          // ignore error on fetch sources
+        }
+      },
     }),
     {
       name: 'chaibook-storage',

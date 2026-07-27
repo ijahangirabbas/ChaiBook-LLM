@@ -102,20 +102,20 @@ export function SourceCard({ source, onClick, isActive }: SourceCardProps) {
 
       {/* Status Dot Indicator & Label */}
       <div className="flex items-center justify-between gap-1.5 mt-1 pt-1.5 border-t border-border/50 dark:border-white/5">
-        {status === 'ready' && (
+        {(status === 'ready' || (source.indexingProgress ?? 0) >= 100) && (
           <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
             <span>Ready (Indexed)</span>
           </div>
         )}
-        {(status === 'indexing' || status === 'uploading') && (
+        {status !== 'ready' && (source.indexingProgress ?? 0) < 100 && status !== 'error' && (
           <div className="flex items-center justify-between w-full text-xs text-amber-600 dark:text-amber-400 font-medium">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-ping" />
               <span>Indexing...</span>
             </div>
             <span className="text-[10px] bg-amber-100 dark:bg-amber-950 px-1.5 py-0.5 rounded font-bold">
-              {source.indexingProgress ?? 45}%
+              {source.indexingProgress ?? 25}%
             </span>
           </div>
         )}

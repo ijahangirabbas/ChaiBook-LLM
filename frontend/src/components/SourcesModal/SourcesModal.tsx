@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Database } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
@@ -14,7 +15,17 @@ export function SourcesModal() {
     notebooks,
     openSourceInspector,
     activeSourceId,
+    pollPendingSources,
   } = useAppStore();
+
+  useEffect(() => {
+    if (!sourcesModalOpen) return;
+    pollPendingSources();
+    const interval = setInterval(() => {
+      pollPendingSources();
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [sourcesModalOpen, pollPendingSources]);
 
   if (!sourcesModalOpen) return null;
 
@@ -23,8 +34,8 @@ export function SourcesModal() {
     ? sources.filter((s) => !s.notebookId || s.notebookId === activeNotebookId)
     : sources;
 
-  const readyCount = activeNotebookSources.filter((s) => s.status === 'ready').length;
-  const indexingCount = activeNotebookSources.filter((s) => s.status === 'indexing' || s.status === 'uploading').length;
+  const readyCount = activeNotebookSources.filter((s) => s.status === 'ready' || (s.indexingProgress ?? 0) >= 100).length;
+  const indexingCount = activeNotebookSources.filter((s) => (s.status === 'indexing' || s.status === 'uploading') && (s.indexingProgress ?? 0) < 100).length;
   const errorCount = activeNotebookSources.filter((s) => s.status === 'error').length;
 
   return (

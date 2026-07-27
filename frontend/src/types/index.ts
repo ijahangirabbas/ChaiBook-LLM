@@ -201,6 +201,8 @@ export interface AppState {
   removeSource: (sourceId: string) => void
   reindexSource: (sourceId: string) => void
   updateSourceStatus: (sourceId: string, status: SourceIndexingStatus, progress?: number) => void
+  pollPendingSources: () => Promise<void>
+  fetchNotebookSources: (notebookId: string) => Promise<void>
 }
 
 // ─── Add Source Modal Types ───────────────────────────────────────────────────

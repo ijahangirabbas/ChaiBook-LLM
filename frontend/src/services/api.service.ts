@@ -77,6 +77,43 @@ export class ApiService {
     }));
   }
 
+  static async getNotebookById(id: string): Promise<{ notebook: Notebook; sources: any[] }> {
+    const res = await fetch(`${API_BASE_URL}/notebooks/${id}`, { headers: await this.headers() });
+    const json = await this.parseJson(res);
+    const nb = json.data || {};
+    const notebook: Notebook = {
+      id: nb.id,
+      title: nb.title,
+      description: nb.description,
+      sourceCount: nb.sourceCount || (nb.sources || []).length,
+      updatedAt: new Date(nb.updatedAt || Date.now()),
+      color: nb.color || 'indigo',
+      icon: nb.icon || 'BookOpen',
+    };
+    const sources = (nb.sources || []).map((s: any, idx: number) => {
+      let domainStr = 'Uploaded Source';
+      if (s.url) {
+        try {
+          domainStr = new URL(s.url).hostname;
+        } catch {
+          domainStr = s.url;
+        }
+      }
+      return {
+        id: s.id,
+        notebookId: s.notebookId || id,
+        type: (s.type || 'text').toLowerCase(),
+        title: s.title || 'Untitled Source',
+        url: s.url,
+        domain: domainStr,
+        number: idx + 1,
+        status: s.status || 'ready',
+        indexingProgress: s.indexingProgress ?? (s.status === 'ready' ? 100 : 25),
+      };
+    });
+    return { notebook, sources };
+  }
+
   static async createNotebook(data: { title: string; description?: string; color?: string; icon?: string }): Promise<Notebook> {
     const res = await fetch(`${API_BASE_URL}/notebooks`, {
       method: 'POST',
