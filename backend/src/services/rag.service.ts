@@ -54,8 +54,7 @@ export class RagService {
       const searchResults = await vectorService.searchWorkspace(query, notebookId, 5, workspaceId);
 
       if (searchResults.length === 0) {
-        const fallbackText = 'I could not find any relevant information or sources in this notebook to answer your question.';
-        sendSSEEvent(res, { type: 'token', content: fallbackText });
+        const fallbackText = 'I do not have enough information in the provided workspace sources to answer that.';
         sendSSEEvent(res, { type: 'token.delta', text: fallbackText });
         sendSSEEvent(res, { type: 'citations', sources: [] });
         sendSSEEvent(res, { type: 'completed' });
@@ -113,7 +112,6 @@ export class RagService {
 
       if (!config.openaiApiKey) {
         fullResponseText = `[OPENAI_API_KEY not configured] Here is the retrieved context from your notebook sources:\n\n${searchResults.map((r, i) => `[${i + 1}] ${r.document.pageContent}`).join('\n\n')}`;
-        sendSSEEvent(res, { type: 'token', content: fullResponseText });
         sendSSEEvent(res, { type: 'token.delta', text: fullResponseText });
       } else {
         const llm = new ChatOpenAI({
@@ -129,7 +127,6 @@ export class RagService {
           const textToken = typeof chunk.content === 'string' ? chunk.content : String(chunk.content || '');
           if (textToken) {
             fullResponseText += textToken;
-            sendSSEEvent(res, { type: 'token', content: textToken });
             sendSSEEvent(res, { type: 'token.delta', text: textToken });
           }
         }

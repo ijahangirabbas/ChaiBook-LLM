@@ -118,6 +118,7 @@ export function ChatPage() {
     )
 
     let accumulatedContent = ''
+    let retrievedCitations: any[] = []
 
     await ApiService.streamRAGChat(
       currentNotebookId,
@@ -126,12 +127,30 @@ export function ChatPage() {
         accumulatedContent += token
       },
       () => {
+        const finalSources = retrievedCitations.length > 0
+          ? retrievedCitations.map((c: any) => ({
+              id: c.source_id || generateId(),
+              notebookId: currentNotebookId,
+              type: (c.source_type || 'text').toLowerCase(),
+              title: c.title || 'Knowledge Base Source',
+              url: c.url,
+              domain: c.domain || (c.url ? new URL(c.url).hostname : 'Knowledge Base'),
+              number: c.citationNumber || 1,
+              status: 'ready' as const,
+              retrievedChunk: c.retrievedChunk,
+              similarity: c.similarity,
+              pageNumber: c.pageNumber,
+              totalPages: c.totalPages,
+              timelineSegment: c.timelineSegment,
+            }))
+          : [];
+
         const aiMsg: Message = {
           id: aiMsgId,
           role: 'assistant',
           content: accumulatedContent || 'The response completed without content. Please try again.',
           timestamp: new Date(),
-          sources: activeNotebookSources,
+          sources: finalSources,
           isStreaming: false,
         }
         addMessage(aiMsg)
@@ -148,6 +167,9 @@ export function ChatPage() {
         }
         addMessage(aiMsg)
         setIsStreaming(false)
+      },
+      (citations) => {
+        retrievedCitations = citations
       }
     )
   }

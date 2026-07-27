@@ -216,7 +216,8 @@ export class ApiService {
     message: string,
     onChunk: (chunk: string) => void,
     onComplete: () => void,
-    onError: (err: any) => void
+    onError: (err: any) => void,
+    onCitations?: (citations: any[]) => void
   ): Promise<void> {
     try {
       const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/chat`, {
@@ -254,7 +255,9 @@ export class ApiService {
             }
             try {
               const parsed = JSON.parse(dataStr);
-              if (parsed.type === 'completed' || parsed.type === 'done') {
+              if (parsed.type === 'citations' && Array.isArray(parsed.sources)) {
+                if (onCitations) onCitations(parsed.sources);
+              } else if (parsed.type === 'completed' || parsed.type === 'done') {
                 onComplete();
                 return;
               } else if (parsed.type === 'failed' || parsed.type === 'error') {

@@ -47,6 +47,7 @@ function ProcessedContent({ content, sources }: { content: string; sources?: Mes
 }
 
 export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
+  const { openSourceInspector } = useAppStore()
   const [copied, setCopied] = useState(false)
   const [liked, setLiked] = useState<boolean | null>(null)
 
@@ -92,6 +93,27 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
           {/* Content with interactive citation parsing */}
           <ProcessedContent content={message.content} sources={message.sources} />
         </div>
+
+        {/* Cited Sources Badge List */}
+        {!isUser && message.sources && message.sources.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-1">
+            <span className="text-[11px] font-semibold text-text-muted dark:text-text-muted-dark mr-1">
+              Cited Sources:
+            </span>
+            {message.sources.map((s, idx) => (
+              <button
+                key={s.id || idx}
+                onClick={() => openSourceInspector(s.id)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold border border-primary/20 transition-all cursor-pointer"
+                title={`Click to view exact excerpt from ${s.title}`}
+              >
+                <span>[{s.number || idx + 1}]</span>
+                <span className="max-w-[140px] truncate">{s.title}</span>
+                {s.pageNumber && <span className="text-[10px] opacity-75">p.{s.pageNumber}</span>}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Action bar for assistant messages */}
         {!isUser && (

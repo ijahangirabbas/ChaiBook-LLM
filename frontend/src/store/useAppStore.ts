@@ -231,12 +231,16 @@ export const useAppStore = create<AppState>()(
       addSource: (source: Source) =>
         set((state) => ({ sources: [source, ...state.sources] })),
 
-      removeSource: (sourceId: string) =>
+      removeSource: (sourceId: string) => {
         set((state) => ({
           sources: state.sources.filter((s) => s.id !== sourceId),
           activeSourceId: state.activeSourceId === sourceId ? null : state.activeSourceId,
           sourceInspectorOpen: state.activeSourceId === sourceId ? false : state.sourceInspectorOpen,
-        })),
+        }));
+        ApiService.deleteSource(sourceId).catch(() => {
+          // ignore API deletion error
+        });
+      },
 
       reindexSource: (sourceId: string) =>
         set((state) => ({
