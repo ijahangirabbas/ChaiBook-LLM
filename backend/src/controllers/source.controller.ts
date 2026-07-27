@@ -126,7 +126,7 @@ export class SourceController {
         title,
         url,
         s3Key,
-        filePath: s3Key ? undefined : file?.path,
+        filePath: file?.path,
         rawContent: content,
       });
 

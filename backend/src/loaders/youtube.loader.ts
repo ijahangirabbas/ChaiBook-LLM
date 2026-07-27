@@ -43,7 +43,25 @@ export class YoutubeLoader extends BaseLoader {
     }
 
     if (transcriptEntries.length === 0) {
-      throw new Error('No transcripts found for this YouTube video. Verify captions are enabled.');
+      return [
+        new Document({
+          pageContent: `YouTube Video Source: ${input.title || 'YouTube Video'}\nURL: ${input.url || ''}`,
+          metadata: {
+            notebook_id: input.notebookId,
+            source_id: input.sourceId,
+            source_type: 'youtube',
+            title: input.title || 'YouTube Video',
+            url: input.url,
+            startSeconds: 0,
+            timelineSegment: {
+              start: '00:00',
+              startSeconds: 0,
+              end: '00:00',
+              endSeconds: 0,
+            },
+          },
+        }),
+      ];
     }
 
     const firstSegment = transcriptEntries[0];

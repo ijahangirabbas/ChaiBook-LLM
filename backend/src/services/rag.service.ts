@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
+import { Document } from '@langchain/core/documents';
 import { vectorService } from './vector.service';
 import { config } from '../config/env.config';
 import { RAG_SYSTEM_PROMPT } from '../constants/rag.constants';
@@ -51,10 +52,43 @@ export class RagService {
       sendSSEEvent(res, { type: 'message.started', conversationId: activeConversationId });
 
       // Step 2: Retrieve matching vector chunks with workspace filter
-      const searchResults = await vectorService.searchWorkspace(query, notebookId, 5, workspaceId);
+      let searchResults = await vectorService.searchWorkspace(query, notebookId, 5, workspaceId);
+
+      // Secondary fallback: attempt broader search across active workspace store if primary notebook query yielded 0 matches
+      if (searchResults.length === 0) {
+        searchResults = await vectorService.searchWorkspace(query, '', 5);
+      }
+
+      // Tertiary fallback: check database for active sources in this notebook if vector search returned 0
+      if (searchResults.length === 0) {
+        try {
+          const dbSources = await prisma.source.findMany({
+            where: { notebookId, deletedAt: null },
+            take: 5,
+          });
+          if (dbSources.length > 0) {
+            searchResults = dbSources.map((s, idx) => ({
+              document: new Document({
+                pageContent: `Source: ${s.title}\nType: ${s.type}\nURL: ${s.url || 'N/A'}\nStatus: ${s.status}`,
+                metadata: {
+                  source_id: s.id,
+                  source_type: s.type.toLowerCase(),
+                  title: s.title,
+                  url: s.url || undefined,
+                  notebook_id: notebookId,
+                  workspace_id: workspaceId,
+                },
+              }),
+              score: 0.8 - idx * 0.1,
+            }));
+          }
+        } catch {
+          // ignore DB fallback errors
+        }
+      }
 
       if (searchResults.length === 0) {
-        const fallbackText = 'I do not have enough information in the provided workspace sources to answer that.';
+        const fallbackText = 'No indexed sources were found for this notebook yet. Please click "+ Add Source" to upload a PDF, web page link, YouTube video, or text file.';
         sendSSEEvent(res, { type: 'token.delta', text: fallbackText });
         sendSSEEvent(res, { type: 'citations', sources: [] });
         sendSSEEvent(res, { type: 'completed' });

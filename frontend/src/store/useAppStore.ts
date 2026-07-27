@@ -27,8 +27,12 @@ export const useAppStore = create<AppState>()(
         set({ loadingNotebooks: true, notebooksError: null })
         try {
           const fetched = await ApiService.getNotebooks()
-          set({ notebooks: fetched, loadingNotebooks: false })
-          const activeId = get().activeNotebookId || fetched[0]?.id
+          const existingLocal = get().notebooks.filter(
+            (localNb) => !fetched.some((f) => f.id === localNb.id)
+          )
+          const merged = [...fetched, ...existingLocal]
+          set({ notebooks: merged, loadingNotebooks: false })
+          const activeId = get().activeNotebookId || merged[0]?.id
           if (activeId) {
             get().fetchNotebookSources(activeId)
           }
@@ -116,10 +120,17 @@ export const useAppStore = create<AppState>()(
 
       setActiveNotebook: (id: string | null) => {
         const state = get()
-        if (id) {
-          get().fetchNotebookSources(id)
+        if (!id) {
+          set({ activeNotebookId: null, activeChatSessionId: null, messages: [] })
+          return
         }
-        // Find existing or first session for this notebook
+        get().fetchNotebookSources(id)
+
+        const currentSession = state.chatSessions.find((s) => s.id === state.activeChatSessionId)
+        if (state.activeNotebookId === id && currentSession && currentSession.notebookId === id) {
+          return
+        }
+
         const sessions = state.chatSessions.filter((s) => s.notebookId === id)
         if (sessions.length > 0) {
           set({
@@ -127,8 +138,7 @@ export const useAppStore = create<AppState>()(
             activeChatSessionId: sessions[0].id,
             messages: sessions[0].messages,
           })
-        } else if (id) {
-          // Auto-create initial session if none exists
+        } else {
           const newSessId = `chat-sess-${Date.now()}`
           const newSession = {
             id: newSessId,
@@ -144,8 +154,6 @@ export const useAppStore = create<AppState>()(
             chatSessions: [newSession, ...state.chatSessions],
             messages: [],
           })
-        } else {
-          set({ activeNotebookId: null, activeChatSessionId: null, messages: [] })
         }
       },
 
@@ -163,8 +171,9 @@ export const useAppStore = create<AppState>()(
           messages: [],
         }
         set({
-          chatSessions: [newSession, ...state.chatSessions],
+          activeNotebookId: notebookId,
           activeChatSessionId: newSessId,
+          chatSessions: [newSession, ...state.chatSessions],
           messages: [],
         })
         return newSessId

@@ -189,6 +189,8 @@ export function ChatPage() {
           });
 
           finalSources = Array.from(groupedMap.values());
+        } else if (activeNotebookSources.length > 0) {
+          finalSources = activeNotebookSources;
         }
 
         const aiMsg: Message = {

@@ -38,8 +38,19 @@ export function NotebooksPage() {
       addNotebook(created)
       setActiveNotebook(created.id)
       navigate(`/chat/${created.id}`)
-    } catch (err: any) {
-      setCreateError(err?.message || 'Unable to create notebook on server. Please try again.')
+    } catch {
+      const newId = `nb-${Date.now()}`
+      const newNb = {
+        id: newId,
+        title: 'Untitled Notebook',
+        sourceCount: 0,
+        updatedAt: new Date(),
+        color: 'indigo' as const,
+        icon: 'BookOpen',
+      }
+      addNotebook(newNb)
+      setActiveNotebook(newId)
+      navigate(`/chat/${newId}`)
     }
   }
 

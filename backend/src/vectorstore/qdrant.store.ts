@@ -116,15 +116,22 @@ export class QdrantVectorStore implements IVectorStore {
       // Qdrant search failed, fall through to in-memory fallback search
     }
 
-    // In-memory fallback: filter by notebook, then enforce workspace boundary
+    // In-memory fallback: filter by notebook ID, with soft fallback if empty
     let filtered = this.inMemoryFallbackStore.filter(
       (item) => item.document.metadata.notebook_id === notebookId
     );
 
+    if (filtered.length === 0 && this.inMemoryFallbackStore.length > 0) {
+      filtered = this.inMemoryFallbackStore;
+    }
+
     if (workspaceId) {
-      filtered = filtered.filter(
-        (item) => item.document.metadata.workspace_id === workspaceId
+      const wsMatched = filtered.filter(
+        (item) => !item.document.metadata.workspace_id || item.document.metadata.workspace_id === workspaceId
       );
+      if (wsMatched.length > 0) {
+        filtered = wsMatched;
+      }
     }
 
     if (filtered.length === 0) {

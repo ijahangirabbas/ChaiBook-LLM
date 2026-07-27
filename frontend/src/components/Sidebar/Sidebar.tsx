@@ -8,6 +8,8 @@ import { useAppStore } from '../../store/useAppStore'
 import { cn } from '../../lib/utils'
 import { DASHBOARD_NAV_ITEMS, NOTEBOOK_NAV_ITEMS } from '../../lib/constants'
 
+import { ApiService } from '../../services/api.service'
+
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Home,
   MessageSquare,
@@ -31,18 +33,32 @@ function DashboardSidebar() {
       return
     }
     if (item.id === 'new-chat') {
-      const newId = `nb-${Date.now()}`
-      const newNb = {
-        id: newId,
-        title: 'Untitled Notebook',
-        sourceCount: 0,
-        updatedAt: new Date(),
-        color: 'indigo' as const,
-        icon: 'BookOpen',
+      const handleCreate = async () => {
+        try {
+          const created = await ApiService.createNotebook({
+            title: 'Untitled Notebook',
+            color: 'indigo',
+            icon: 'BookOpen',
+          })
+          addNotebook(created)
+          setActiveNotebook(created.id)
+          navigate(`/chat/${created.id}`)
+        } catch {
+          const newId = `nb-${Date.now()}`
+          const newNb = {
+            id: newId,
+            title: 'Untitled Notebook',
+            sourceCount: 0,
+            updatedAt: new Date(),
+            color: 'indigo' as const,
+            icon: 'BookOpen',
+          }
+          addNotebook(newNb)
+          setActiveNotebook(newId)
+          navigate(`/chat/${newId}`)
+        }
       }
-      addNotebook(newNb)
-      setActiveNotebook(newId)
-      navigate(`/chat/${newId}`)
+      handleCreate()
       return
     }
     navigate(item.path)
@@ -212,18 +228,32 @@ function NotebookSidebar() {
       return
     }
     if (item.id === 'new-notebook') {
-      const newId = `nb-${Date.now()}`
-      const newNb = {
-        id: newId,
-        title: 'Untitled Notebook',
-        sourceCount: 0,
-        updatedAt: new Date(),
-        color: 'indigo' as const,
-        icon: 'BookOpen',
+      const handleCreate = async () => {
+        try {
+          const created = await ApiService.createNotebook({
+            title: 'Untitled Notebook',
+            color: 'indigo',
+            icon: 'BookOpen',
+          })
+          addNotebook(created)
+          setActiveNotebook(created.id)
+          navigate(`/chat/${created.id}`)
+        } catch {
+          const newId = `nb-${Date.now()}`
+          const newNb = {
+            id: newId,
+            title: 'Untitled Notebook',
+            sourceCount: 0,
+            updatedAt: new Date(),
+            color: 'indigo' as const,
+            icon: 'BookOpen',
+          }
+          addNotebook(newNb)
+          setActiveNotebook(newId)
+          navigate(`/chat/${newId}`)
+        }
       }
-      addNotebook(newNb)
-      setActiveNotebook(newId)
-      navigate(`/chat/${newId}`)
+      handleCreate()
       return
     }
     navigate(item.path)
