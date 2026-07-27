@@ -4,7 +4,7 @@ import { Router } from './app/router'
 import { useAppStore } from './store/useAppStore'
 
 export default function App() {
-  const { isAuthenticated, login, fetchNotebooksFromApi } = useAppStore()
+  const { login, logout, fetchNotebooksFromApi } = useAppStore()
   const { user, isLoaded, isSignedIn } = useUser()
 
   useEffect(() => {
@@ -31,19 +31,25 @@ export default function App() {
         storage: { used: 1.2, total: 10 },
       })
       fetchNotebooksFromApi()
-    } else if (!isAuthenticated) {
-      // Unauthenticated fallback context
-      login({
-        id: 'dev-user',
-        name: 'ChaiBook User',
-        email: 'user@chaibook.ai',
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=chaibook',
-        plan: 'pro',
-        storage: { used: 1.2, total: 10 },
-      })
-      fetchNotebooksFromApi()
+    } else {
+      // User is not signed into Clerk: clear any stale local state
+      logout()
     }
-  }, [isLoaded, isSignedIn, user, login, fetchNotebooksFromApi, isAuthenticated])
+  }, [isLoaded, isSignedIn, user, login, logout, fetchNotebooksFromApi])
+
+  if (!isLoaded) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background dark:bg-background-dark">
+        <div className="flex flex-col items-center gap-3">
+          <div className="text-4xl animate-bounce">☕</div>
+          <p className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
+            Initializing ChaiBook LLM...
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return <Router />
 }
+
