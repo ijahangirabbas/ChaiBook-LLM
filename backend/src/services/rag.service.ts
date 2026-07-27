@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { ChatOpenAI } from '@langchain/openai';
-import { PromptTemplate } from '@langchain/core/prompts';
+import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import { Document } from '@langchain/core/documents';
 import { vectorService } from './vector.service';
 import { config } from '../config/env.config';
@@ -51,15 +51,10 @@ export class RagService {
 
       sendSSEEvent(res, { type: 'message.started', conversationId: activeConversationId });
 
-      // Step 2: Retrieve matching vector chunks with workspace filter
+      // Step 2: Retrieve matching vector chunks strictly scoped to active notebook
       let searchResults = await vectorService.searchWorkspace(query, notebookId, 5, workspaceId);
 
-      // Secondary fallback: attempt broader search across active workspace store if primary notebook query yielded 0 matches
-      if (searchResults.length === 0) {
-        searchResults = await vectorService.searchWorkspace(query, '', 5);
-      }
-
-      // Tertiary fallback: check database for active sources in this notebook if vector search returned 0
+      // Secondary fallback: check database for active sources in this notebook if vector search returned 0
       if (searchResults.length === 0) {
         try {
           const dbSources = await prisma.source.findMany({
@@ -69,7 +64,7 @@ export class RagService {
           if (dbSources.length > 0) {
             searchResults = dbSources.map((s, idx) => ({
               document: new Document({
-                pageContent: `Source: ${s.title}\nType: ${s.type}\nURL: ${s.url || 'N/A'}\nStatus: ${s.status}`,
+                pageContent: `Source Title: ${s.title}\nSource Type: ${s.type}\nURL: ${s.url || 'N/A'}\nStatus: ${s.status}`,
                 metadata: {
                   source_id: s.id,
                   source_type: s.type.toLowerCase(),
@@ -137,12 +132,9 @@ export class RagService {
         });
       });
 
-      // Step 4: Build Prompt Template & Stream Tokens
-      const promptTemplate = PromptTemplate.fromTemplate(RAG_SYSTEM_PROMPT);
-      const formattedPrompt = await promptTemplate.format({
-        context: formattedContext,
-        question: query,
-      });
+      // Step 4: Build Prompt Template & Stream Tokens with System and Human messages
+      const userPrompt = `<context>\n${formattedContext}</context>\n\nQuestion: ${query}`;
+      const approxPromptTokens = Math.round((RAG_SYSTEM_PROMPT.length + userPrompt.length) / 4);
 
       if (!config.openaiApiKey) {
         fullResponseText = `[OPENAI_API_KEY not configured] Here is the retrieved context from your notebook sources:\n\n${searchResults.map((r, i) => `[${i + 1}] ${r.document.pageContent}`).join('\n\n')}`;
@@ -156,7 +148,12 @@ export class RagService {
             streaming: true,
           });
 
-          const stream = await llm.stream(formattedPrompt);
+          const messages = [
+            new SystemMessage(RAG_SYSTEM_PROMPT),
+            new HumanMessage(userPrompt),
+          ];
+
+          const stream = await llm.stream(messages);
 
           for await (const chunk of stream) {
             const textToken = typeof chunk.content === 'string' ? chunk.content : String(chunk.content || '');
@@ -199,7 +196,7 @@ export class RagService {
           await conversationRepository.saveGenerationStats({
             messageId: assistantMsg.id,
             model: config.chatModel,
-            promptTokens: Math.round(formattedPrompt.length / 4),
+            promptTokens: approxPromptTokens,
             completionTokens: Math.round(fullResponseText.length / 4),
             latencyMs: Date.now() - startTime,
           });
