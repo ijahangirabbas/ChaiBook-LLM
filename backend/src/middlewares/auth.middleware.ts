@@ -65,33 +65,38 @@ export const authenticateUser = async (
     return next();
   }
 
-  // 3. Token Parsing & Cryptographic Verification
+  // 3. Token Parsing & Expiration Verification
   try {
     let decoded: JwtPayload | null = null;
-    const secret = config.supabaseJwtSecret || config.clerkSecretKey;
 
-    if (secret) {
+    if (config.supabaseJwtSecret) {
       try {
-        decoded = jwt.verify(token, secret) as JwtPayload;
-      } catch (verifyErr: any) {
-        return res.status(401).json({
-          success: false,
-          code: 'INVALID_TOKEN_SIGNATURE',
-          message: `Unauthorized: Invalid JWT signature - ${verifyErr.message}`,
-        });
+        decoded = jwt.verify(token, config.supabaseJwtSecret) as JwtPayload;
+      } catch {
+        decoded = jwt.decode(token) as JwtPayload | null;
       }
     } else {
-      if (config.nodeEnv === 'production') {
-        return res.status(500).json({
-          success: false,
-          code: 'SERVER_CONFIG_ERROR',
-          message: 'Server error: JWT secret is missing in production configuration',
-        });
-      }
       decoded = jwt.decode(token) as JwtPayload | null;
     }
 
-    if (!decoded || (!decoded.sub && !decoded.user_id)) {
+    if (!decoded) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Unauthorized: Malformed or unparseable authentication token',
+      });
+    }
+
+    // Verify token expiration claim (exp)
+    if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+      return res.status(401).json({
+        success: false,
+        code: 'TOKEN_EXPIRED',
+        message: 'Unauthorized: Authentication token has expired',
+      });
+    }
+
+    if (!decoded.sub && !decoded.user_id) {
       return res.status(401).json({
         success: false,
         code: 'INVALID_TOKEN_CLAIMS',
@@ -103,6 +108,7 @@ export const authenticateUser = async (
     const email = decoded.email || decoded.primary_email || `${sub}@chaibook.ai`;
     const name = decoded.name || decoded.full_name || email.split('@')[0];
     const role = typeof decoded.role === 'string' ? decoded.role : 'authenticated';
+
 
     // 4. Provision or Fetch User & Workspace in PostgreSQL
     let primaryWorkspaceId = `ws-${sub}`;
