@@ -250,12 +250,14 @@ export class ApiService {
       timestamp: new Date(m.createdAt || Date.now()),
       sources: m.sources || (m.citations && m.citations.length > 0
         ? m.citations.map((c: any, idx: number) => ({
-            id: c.sourceId || c.id,
+            id: c.sourceId || c.id || `cite-${idx}`,
             title: c.title || 'Cited Source',
             number: idx + 1,
             retrievedChunk: c.snippet,
             pageNumber: c.page,
             similarity: c.score,
+            chunks: c.snippet ? [{ retrievedChunk: c.snippet, pageNumber: c.page, similarity: c.score }] : undefined,
+            pagesText: c.page ? `p.${c.page}` : undefined,
           }))
         : undefined),
     }));

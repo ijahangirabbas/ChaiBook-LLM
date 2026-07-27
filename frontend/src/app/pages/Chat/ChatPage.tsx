@@ -349,7 +349,7 @@ export function ChatPage() {
                             <SourceCard
                               key={source.id}
                               source={source}
-                              onClick={() => openSourceInspector(source.id)}
+                              onClick={() => openSourceInspector(source.id, source, 'retrieved')}
                               isActive={useAppStore.getState().activeSourceId === source.id}
                             />
                           ))}

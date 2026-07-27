@@ -174,6 +174,7 @@ export interface AppState {
   // Source Inspector
   sourceInspectorOpen: boolean
   activeSourceId: string | null
+  activeSourceOverride: Source | null
   activeSourceTab: 'overview' | 'retrieved'
 
   // Modals
@@ -198,7 +199,7 @@ export interface AppState {
   deleteChatSession: (sessionId: string) => void
   addMessage: (message: Message) => void
   setStreaming: (streaming: boolean) => void
-  openSourceInspector: (sourceId: string) => void
+  openSourceInspector: (sourceId: string, customSource?: Source, defaultTab?: 'overview' | 'retrieved') => void
   closeSourceInspector: () => void
   setActiveSourceTab: (tab: 'overview' | 'retrieved') => void
   setAddSourceModalOpen: (open: boolean) => void

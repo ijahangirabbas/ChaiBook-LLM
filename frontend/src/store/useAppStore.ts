@@ -59,6 +59,7 @@ export const useAppStore = create<AppState>()(
       // ─── Source Inspector ─────────────────────────────────────────────
       sourceInspectorOpen: false,
       activeSourceId: null,
+      activeSourceOverride: null,
       activeSourceTab: 'retrieved',
 
       // ─── Add Source & Sources Modal ──────────────────────────────────
@@ -211,11 +212,16 @@ export const useAppStore = create<AppState>()(
 
       setStreaming: (streaming: boolean) => set({ isStreaming: streaming }),
 
-      openSourceInspector: (sourceId: string) =>
-        set({ sourceInspectorOpen: true, activeSourceId: sourceId }),
+      openSourceInspector: (sourceId: string, customSource?: Source, defaultTab?: 'overview' | 'retrieved') =>
+        set({
+          sourceInspectorOpen: true,
+          activeSourceId: sourceId,
+          activeSourceOverride: customSource || null,
+          ...(defaultTab && { activeSourceTab: defaultTab }),
+        }),
 
       closeSourceInspector: () =>
-        set({ sourceInspectorOpen: false, activeSourceId: null }),
+        set({ sourceInspectorOpen: false, activeSourceId: null, activeSourceOverride: null }),
 
       setActiveSourceTab: (tab) => set({ activeSourceTab: tab }),
 

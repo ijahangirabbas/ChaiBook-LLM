@@ -27,7 +27,7 @@ function ProcessedContent({ content, sources }: { content: string; sources?: Mes
           return (
             <button
               key={i}
-              onClick={() => targetSource && openSourceInspector(targetSource.id)}
+              onClick={() => targetSource && openSourceInspector(targetSource.id, targetSource, 'retrieved')}
               className={cn(
                 'inline-flex items-center justify-center mx-0.5 px-1.5 py-0.2',
                 'rounded-md text-[11px] font-bold text-primary dark:text-primary-light',
@@ -103,7 +103,7 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
             {message.sources.map((s, idx) => (
               <button
                 key={s.id || idx}
-                onClick={() => openSourceInspector(s.id)}
+                onClick={() => openSourceInspector(s.id, s, 'retrieved')}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold border border-primary/20 transition-all cursor-pointer"
                 title={`Click to view exact excerpt from ${s.title}`}
               >

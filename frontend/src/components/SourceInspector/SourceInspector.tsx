@@ -7,9 +7,41 @@ import { SourceIcon } from '../SourceCard/SourceCard'
 import { cn } from '../../lib/utils'
 
 function getYouTubeId(url?: string): string {
-  if (!url) return 'GdjkfD93jU'
+  if (!url) return ''
   const match = url.match(/(?:v=|\/embed\/|\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
-  return match ? match[1] : 'GdjkfD93jU'
+  return match ? match[1] : ''
+}
+
+function parseSubtitlesToTranscript(rawText: string) {
+  if (!rawText) return []
+  const blocks = rawText.split(/\n\s*\n/)
+  const entries: { timestamp: string; seconds: number; text: string; isCited?: boolean }[] = []
+
+  for (const block of blocks) {
+    const lines = block.trim().split('\n').map((l) => l.trim()).filter(Boolean)
+    if (lines.length === 0) continue
+
+    const timeLineIndex = lines.findIndex((l) => l.includes('-->'))
+    if (timeLineIndex !== -1) {
+      const timeLine = lines[timeLineIndex]
+      const textLines = lines.slice(timeLineIndex + 1).join(' ')
+      const match = timeLine.match(/(\d{2}:\d{2}:\d{2}[\.,]\d{3}|\d{2}:\d{2}[\.,]\d{3}|\d{2}:\d{2}:\d{2}|\d{2}:\d{2})\s*-->/)
+      if (match) {
+        const timestamp = match[1].replace(',', '.')
+        const parts = timestamp.split(':')
+        let seconds = 0
+        if (parts.length === 3) {
+          seconds = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseFloat(parts[2])
+        } else if (parts.length === 2) {
+          seconds = parseInt(parts[0], 10) * 60 + parseFloat(parts[1])
+        }
+        if (textLines) {
+          entries.push({ timestamp, seconds: Math.floor(seconds), text: textLines, isCited: true })
+        }
+      }
+    }
+  }
+  return entries
 }
 
 export function SourceInspector() {
@@ -17,6 +49,7 @@ export function SourceInspector() {
     sources: storeSources,
     sourceInspectorOpen,
     activeSourceId,
+    activeSourceOverride,
     activeSourceTab,
     setActiveSourceTab,
     closeSourceInspector,
@@ -27,7 +60,10 @@ export function SourceInspector() {
 
   const sources = storeSources
   const activeIndex = sources.findIndex((s) => s.id === activeSourceId)
-  const source = activeIndex >= 0 ? sources[activeIndex] : null
+  const baseSource = activeIndex >= 0 ? sources[activeIndex] : null
+  const source = activeSourceOverride
+    ? { ...(baseSource || {}), ...activeSourceOverride }
+    : baseSource
 
   const handlePrev = () => {
     if (activeIndex > 0) {
@@ -265,83 +301,91 @@ export function SourceInspector() {
                     {source.type === 'pdf' && (
                       <div className="space-y-4">
                         <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-gray-50 dark:bg-white/5 border border-border dark:border-border-dark text-xs">
-                          <span className="font-semibold text-text-muted">PDF Page Navigation</span>
+                          <span className="font-semibold text-text-muted">PDF Document Page</span>
                           <span className="font-mono font-bold text-primary">
-                            Page {source.pageNumber || 1} of {source.totalPages || 1}
+                            Page {source.pageNumber || 1} {source.totalPages ? `of ${source.totalPages}` : ''}
                           </span>
                         </div>
 
-                        {/* PDF Page Canvas Mockup */}
-                        <div className="relative w-full aspect-[1/1.3] rounded-xl border border-border dark:border-border-dark bg-white dark:bg-[#18181B] p-4 shadow-sm overflow-hidden flex flex-col justify-between select-none">
-                          <div className="flex items-center justify-between border-b border-gray-100 dark:border-white/10 pb-2 mb-2">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                              {source.title} — Page {source.pageNumber || 1}
+                        {/* PDF Page Canvas */}
+                        <div className="relative w-full rounded-xl border border-border dark:border-border-dark bg-white dark:bg-[#18181B] p-4 shadow-sm overflow-hidden flex flex-col justify-between">
+                          <div className="flex items-center justify-between border-b border-gray-100 dark:border-white/10 pb-2 mb-3">
+                            <span className="text-[11px] font-bold text-text-primary dark:text-text-primary-dark truncate max-w-[240px]">
+                              {source.title}
                             </span>
-                            <span className="text-[10px] text-gray-400 font-mono">Confidential</span>
+                            {source.pageNumber && (
+                              <span className="text-[10px] text-primary font-mono font-semibold bg-primary/10 px-2 py-0.5 rounded">
+                                Page {source.pageNumber}
+                              </span>
+                            )}
                           </div>
 
-                          {/* Render Bounding Box Highlight if present */}
-                          {source.bbox ? (
-                            <div className="relative flex-1 bg-gray-50/50 dark:bg-white/5 rounded p-3 space-y-2 text-[11px] leading-relaxed text-gray-700 dark:text-gray-300">
-                              <p className="opacity-60">
-                                1. Introduction to Retrieval Augmented Generation architecture and pipeline components.
-                              </p>
-                              <div className="relative p-2.5 rounded-md bg-amber-100/90 dark:bg-amber-950/80 border-2 border-amber-400 dark:border-amber-600 text-amber-950 dark:text-amber-100 font-medium shadow-sm">
-                                <span className="absolute -top-2.5 left-2 px-1.5 py-0.2 bg-amber-500 text-white text-[9px] font-bold uppercase rounded">
-                                  Cited Highlight
+                          <div className="flex-1 bg-gray-50/50 dark:bg-white/5 rounded-lg p-3.5 space-y-3 text-xs leading-relaxed">
+                            {source.retrievedChunk ? (
+                              <div className="relative p-3 rounded-lg bg-amber-50 dark:bg-amber-950/50 border-l-4 border-amber-500 text-amber-950 dark:text-amber-100 font-medium shadow-xs">
+                                <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-1">
+                                  Extracted Knowledge Base Chunk
                                 </span>
-                                {source.retrievedChunk}
+                                <p className="whitespace-pre-wrap">{source.retrievedChunk}</p>
                               </div>
-                              <p className="opacity-60">
-                                2. Evaluation metrics including BLEU, ROUGE, and cosine similarity embeddings.
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="flex-1 bg-gray-50/50 dark:bg-white/5 rounded p-3 space-y-2 text-[11px] leading-relaxed text-gray-700 dark:text-gray-300">
-                              <p className="border-l-2 border-primary pl-2 font-medium text-text-primary dark:text-text-primary-dark">
-                                {source.retrievedChunk || 'No text extracted for this page.'}
-                              </p>
-                            </div>
-                          )}
+                            ) : (
+                              <p className="text-text-muted italic text-xs">No text extracted for this page.</p>
+                            )}
+                          </div>
 
-                          <div className="pt-2 border-t border-gray-100 dark:border-white/10 text-center text-[10px] text-gray-400">
-                            Chaibook Deep-Linked Source Viewer • Page {source.pageNumber || 1}
+                          <div className="pt-3 mt-3 border-t border-gray-100 dark:border-white/10 flex items-center justify-between text-[10px] text-text-muted">
+                            <span>Chaibook PDF Source Inspector</span>
+                            {source.url && (
+                              <a
+                                href={source.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary font-semibold hover:underline flex items-center gap-1"
+                              >
+                                Open Document <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
                           </div>
                         </div>
                       </div>
                     )}
 
                     {/* VTT / SRT Subtitle Transcript Viewer */}
-                    {(source.type === 'vtt' || source.type === 'srt') && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between text-xs font-semibold text-text-muted">
-                          <span>Subtitle Transcript Stream</span>
-                          <span className="font-mono text-primary">[{source.type.toUpperCase()}]</span>
+                    {(source.type === 'vtt' || source.type === 'srt') && (() => {
+                      const transcriptList = (source.transcript && source.transcript.length > 0)
+                        ? source.transcript
+                        : parseSubtitlesToTranscript(source.retrievedChunk || '')
+                      return (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-xs font-semibold text-text-muted">
+                            <span>Subtitle Transcript Stream</span>
+                            <span className="font-mono text-primary">[{source.type.toUpperCase()}]</span>
+                          </div>
+                          {transcriptList.length > 0 ? (
+                            <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                              {transcriptList.map((entry, idx) => (
+                                <div
+                                  key={idx}
+                                  className={cn(
+                                    'p-3 rounded-xl text-xs flex gap-3 border transition-colors',
+                                    entry.isCited
+                                      ? 'bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700/50 text-amber-950 dark:text-amber-100 font-medium'
+                                      : 'bg-gray-50 dark:bg-white/5 border-border dark:border-border-dark text-text-secondary dark:text-text-secondary-dark'
+                                  )}
+                                >
+                                  <span className="font-mono font-semibold text-primary shrink-0">{entry.timestamp}</span>
+                                  <p>{entry.text}</p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-white/5 border border-border dark:border-border-dark text-xs text-text-primary dark:text-text-primary-dark whitespace-pre-wrap">
+                              {source.retrievedChunk || 'No subtitle content available.'}
+                            </div>
+                          )}
                         </div>
-                        {source.transcript && source.transcript.length > 0 ? (
-                          <div className="space-y-2">
-                            {source.transcript.map((entry, idx) => (
-                              <div
-                                key={idx}
-                                className={cn(
-                                  'p-3 rounded-xl text-xs flex gap-3 border transition-colors',
-                                  entry.isCited
-                                    ? 'bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700/50 text-amber-950 dark:text-amber-100 font-medium'
-                                    : 'bg-gray-50 dark:bg-white/5 border-border dark:border-border-dark text-text-secondary dark:text-text-secondary-dark'
-                                )}
-                              >
-                                <span className="font-mono font-semibold text-primary shrink-0">{entry.timestamp}</span>
-                                <p>{entry.text}</p>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="p-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-border dark:border-border-dark text-xs text-text-muted">
-                            {source.retrievedChunk}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      )
+                    })()}
 
                     {/* Webpage / Text Reader View */}
                     {(source.type === 'webpage' || source.type === 'text' || source.type === 'markdown' || source.type === 'word' || source.type === 'powerpoint') && (
@@ -416,34 +460,39 @@ export function SourceInspector() {
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      source.retrievedChunk && (
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-semibold text-text-secondary dark:text-text-secondary-dark">
-                              Retrieved Content Chunk
-                            </span>
-                            <motion.button
-                              whileHover={{ scale: 1.05 }}
-                              whileTap={{ scale: 0.95 }}
-                              onClick={handleCopyChunk}
-                              className="flex items-center gap-1 text-xs text-primary hover:underline"
-                              aria-label="Copy chunk text"
-                            >
-                              {copiedChunk ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
-                              {copiedChunk ? 'Copied' : 'Copy Chunk'}
-                            </motion.button>
-                          </div>
-                          <div className={cn(
-                            'p-3.5 rounded-xl text-sm text-text-primary dark:text-text-primary-dark leading-relaxed',
-                            'bg-primary/5 dark:bg-primary/10 border border-primary/10 dark:border-primary/20'
-                          )}>
-                            <p className="border-l-2 border-primary pl-3 font-medium">
-                              {source.retrievedChunk}
-                            </p>
-                          </div>
+                    ) : source.retrievedChunk ? (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-text-secondary dark:text-text-secondary-dark">
+                            Retrieved Content Chunk
+                          </span>
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={handleCopyChunk}
+                            className="flex items-center gap-1 text-xs text-primary hover:underline"
+                            aria-label="Copy chunk text"
+                          >
+                            {copiedChunk ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+                            {copiedChunk ? 'Copied' : 'Copy Chunk'}
+                          </motion.button>
                         </div>
-                      )
+                        <div className={cn(
+                          'p-3.5 rounded-xl text-sm text-text-primary dark:text-text-primary-dark leading-relaxed',
+                          'bg-primary/5 dark:bg-primary/10 border border-primary/10 dark:border-primary/20'
+                        )}>
+                          <p className="border-l-2 border-primary pl-3 font-medium">
+                            {source.retrievedChunk}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
+                        <p className="font-bold">No Retrieved Chunk Context Available</p>
+                        <p className="leading-relaxed opacity-90">
+                          Click on an inline citation badge (e.g. [1], [2]) or a cited source pill directly under an AI response to view the exact text extracted for that answer.
+                        </p>
+                      </div>
                     )}
 
                     {/* Chunk metadata */}
@@ -454,8 +503,9 @@ export function SourceInspector() {
                       <div className="space-y-1.5 text-xs">
                         {[
                           { label: 'Source Type', value: sourceConfig.label },
-                          { label: 'Domain / Path', value: source.domain || '—' },
+                          { label: 'Domain / Path', value: source.domain || source.title || '—' },
                           source.pageNumber ? { label: 'Cited Page', value: `Page ${source.pageNumber} of ${source.totalPages || '—'}` } : null,
+                          source.similarity !== undefined ? { label: 'Relevance Score', value: `${Math.round(source.similarity * 100)}% match` } : null,
                           source.timelineSegment ? { label: 'Cited Video Time', value: `${source.timelineSegment.start} — ${source.timelineSegment.end}` } : null,
                           source.chunkIndex !== undefined ? { label: 'Chunk Index', value: `#${source.chunkIndex}` } : null,
                         ].filter(Boolean).map((item) => (
