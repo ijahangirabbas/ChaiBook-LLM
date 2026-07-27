@@ -25,14 +25,18 @@ app.use((req, res, next) => {
   next();
 });
 
-// Strict CORS in production; permissive localhost in development
+// Dynamic CORS Policy for production domains & local development
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
 
       const isAllowed =
         config.corsOrigins.includes(origin) ||
+        config.corsOrigins.includes('*') ||
+        origin.endsWith('.vercel.app') ||
+        origin.endsWith('jahangirabbas.com') ||
         (config.nodeEnv !== 'production' &&
           (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')));
 
@@ -40,13 +44,14 @@ app.use(
         return callback(null, true);
       }
 
-      return callback(new Error(`CORS policy error: Origin ${origin} is not allowed`));
+      return callback(null, false);
     },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'x-request-id'],
     credentials: true,
   })
 );
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
