@@ -24,6 +24,9 @@ const envSchema = z.object({
   AWS_S3_BUCKET_NAME: z.string().default('chaibook-sources'),
   WORKSPACE_DAILY_TOKEN_BUDGET: z.string().default('200000').transform((val) => parseInt(val, 10)),
   WORKSPACE_INGESTION_CONCURRENCY: z.string().default('2').transform((val) => parseInt(val, 10)),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  PROCESS_ROLE: z.enum(['api', 'worker', 'all']).default('all'),
+  METRICS_TOKEN: z.string().optional().default(''),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
@@ -56,6 +59,9 @@ export const config = {
   awsS3BucketName: env.AWS_S3_BUCKET_NAME,
   workspaceDailyTokenBudget: env.WORKSPACE_DAILY_TOKEN_BUDGET,
   workspaceIngestionConcurrency: env.WORKSPACE_INGESTION_CONCURRENCY,
+  logLevel: env.LOG_LEVEL,
+  processRole: env.PROCESS_ROLE,
+  metricsToken: env.METRICS_TOKEN || undefined,
 };
 
 function assertProductionConfig(): void {

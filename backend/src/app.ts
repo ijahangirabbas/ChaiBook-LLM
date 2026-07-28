@@ -4,7 +4,10 @@ import helmet from 'helmet';
 import apiV1Routes from './routes/v1';
 import { errorHandler } from './middlewares/error.middleware';
 import { requestContextMiddleware } from './middlewares/request-context.middleware';
-import { checkRedisConnection } from './queue/ingestion.queue';
+import { requestLoggingMiddleware } from './middlewares/request-logging.middleware';
+import { metricsMiddleware } from './middlewares/metrics.middleware';
+import { getReadinessReport, getLivenessReport } from './services/health.service';
+import { getMetricsText } from './lib/metrics';
 import { config } from './config/env.config';
 
 const app = express();
@@ -17,6 +20,8 @@ app.use(
 );
 
 app.use(requestContextMiddleware);
+app.use(metricsMiddleware);
+app.use(requestLoggingMiddleware);
 
 // Dynamic CORS Policy — explicit allowlist only (no wildcard domain suffixes in production)
 app.use(
@@ -56,17 +61,53 @@ app.get('/', (_req, res) => {
   });
 });
 
-// Health Check with Redis Status (no sensitive connection strings exposed)
-app.get('/health', async (_req, res) => {
-  const redisStatus = await checkRedisConnection();
+// Liveness — process is running (no dependency checks)
+app.get('/live', async (_req, res) => {
+  const report = await getLivenessReport();
   res.status(200).json({
     status: 'OK',
     service: 'ChaiBook LLM Backend',
-    redis: {
-      connected: redisStatus.connected,
-      status: redisStatus.status,
-    },
+    ...report,
   });
+});
+
+// Readiness — all critical dependencies must be healthy
+app.get('/ready', async (req, res) => {
+  const report = await getReadinessReport();
+  res.status(report.ready ? 200 : 503).json({
+    status: report.ready ? 'OK' : 'DEGRADED',
+    service: 'ChaiBook LLM Backend',
+    requestId: req.requestId,
+    ...report,
+  });
+});
+
+// Legacy health endpoint — alias to readiness for backward compatibility
+app.get('/health', async (req, res) => {
+  const report = await getReadinessReport();
+  res.status(report.ready ? 200 : 503).json({
+    status: report.ready ? 'OK' : 'DEGRADED',
+    service: 'ChaiBook LLM Backend',
+    requestId: req.requestId,
+    checks: report.checks.reduce<Record<string, { ok: boolean; status: string }>>((acc, check) => {
+      acc[check.name] = { ok: check.ok, status: check.status };
+      return acc;
+    }, {}),
+  });
+});
+
+// Prometheus metrics (optional bearer token in production)
+app.get('/metrics', async (req, res) => {
+  if (config.metricsToken) {
+    const auth = req.headers.authorization;
+    if (auth !== `Bearer ${config.metricsToken}`) {
+      res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: 'Invalid metrics token' });
+      return;
+    }
+  }
+
+  res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+  res.status(200).send(await getMetricsText());
 });
 
 // API Routes

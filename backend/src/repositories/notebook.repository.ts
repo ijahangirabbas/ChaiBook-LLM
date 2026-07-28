@@ -1,6 +1,11 @@
 import { prisma } from '../db/prisma.client';
 import { NotebookModel } from '../services/notebook.service';
 import { vectorService } from '../services/vector.service';
+import {
+  getCachedNotebooks,
+  setCachedNotebooks,
+  invalidateNotebookCache,
+} from '../services/notebook-cache.service';
 
 export interface PaginatedResult<T> {
   data: T[];
@@ -18,6 +23,9 @@ export class NotebookRepository {
     page = 1,
     limit = 20
   ): Promise<PaginatedResult<NotebookModel>> {
+    const cached = await getCachedNotebooks(workspaceId, page, limit);
+    if (cached) return cached;
+
     const skip = (page - 1) * limit;
 
     try {
@@ -51,7 +59,7 @@ export class NotebookRepository {
         updatedAt: nb.updatedAt,
       }));
 
-      return {
+      const result: PaginatedResult<NotebookModel> = {
         data,
         pagination: {
           page,
@@ -60,6 +68,9 @@ export class NotebookRepository {
           totalPages: Math.ceil(total / limit) || 1,
         },
       };
+
+      await setCachedNotebooks(workspaceId, page, limit, result);
+      return result;
     } catch (err) {
       console.error('Database error in getNotebooks:', err);
       throw new Error('Failed to fetch notebooks from database');

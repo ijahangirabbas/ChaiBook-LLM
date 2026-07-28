@@ -7,6 +7,7 @@ import { enqueueIngestionJob } from '../queue/ingestion.queue';
 import { prisma } from '../db/prisma.client';
 import { SourceType } from '../types/source.types';
 import { sendError, sendSuccess } from '../utils/http-response.utils';
+import { invalidateNotebookCache } from '../services/notebook-cache.service';
 
 export class NotebookController {
   async getNotebooks(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
@@ -57,6 +58,7 @@ export class NotebookController {
       });
 
       sendSuccess(res, newNotebook, 201);
+      await invalidateNotebookCache(workspaceId);
     } catch (error) {
       next(error);
     }
@@ -76,6 +78,7 @@ export class NotebookController {
       }
 
       sendSuccess(res, updated);
+      await invalidateNotebookCache(workspaceId);
     } catch (error) {
       next(error);
     }
@@ -111,6 +114,7 @@ export class NotebookController {
       }
 
       sendSuccess(res, duplicated, 201);
+      await invalidateNotebookCache(workspaceId);
     } catch (error) {
       next(error);
     }
@@ -128,6 +132,7 @@ export class NotebookController {
       }
 
       sendSuccess(res, { message: 'Notebook favorite status toggled.' });
+      await invalidateNotebookCache(workspaceId);
     } catch (error) {
       next(error);
     }
@@ -145,6 +150,7 @@ export class NotebookController {
       }
 
       sendSuccess(res, { message: 'Notebook archive status toggled.' });
+      await invalidateNotebookCache(workspaceId);
     } catch (error) {
       next(error);
     }
@@ -162,6 +168,7 @@ export class NotebookController {
       }
 
       sendSuccess(res, { message: `Notebook "${id}" deleted successfully.` });
+      await invalidateNotebookCache(workspaceId);
     } catch (error) {
       next(error);
     }

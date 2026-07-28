@@ -4,6 +4,8 @@ import { sourceService, ProcessSourceParams } from '../services/source.service';
 import { ingestionJobService } from '../services/job.service';
 import { config } from '../config/env.config';
 import { decrementIngestionConcurrency } from '../services/workspace-quota.service';
+import { logger } from '../lib/logger';
+import { ingestionJobsTotal } from '../lib/metrics';
 
 const rawRedisUrl = config.redisUrl;
 const isUpstash = rawRedisUrl.includes('upstash.io');
@@ -77,6 +79,7 @@ export async function enqueueIngestionJob(params: ProcessSourceParams): Promise<
     console.warn(
       '⚠️ Redis unavailable in development — running ingestion inline (not suitable for production).'
     );
+    logger.warn({ sourceId: params.sourceId }, 'Redis unavailable — running ingestion inline');
     setImmediate(async () => {
       try {
         await processIngestionPipeline(params, jobId);
@@ -155,10 +158,10 @@ export function startIngestionWorker(): Worker<ProcessSourceParams> | null {
     const worker = new Worker<ProcessSourceParams>(
       INGESTION_QUEUE_NAME,
       async (job: Job<ProcessSourceParams & { jobId?: string }>) => {
-        console.log(`⚙️ BullMQ Processing Job ${job.id} for Source: ${job.data.sourceId}...`);
+        logger.info({ jobId: job.id, sourceId: job.data.sourceId }, 'Processing ingestion job');
         const dbJobId = job.data.jobId || (await ingestionJobService.createJob(job.data.sourceId));
         await processIngestionPipeline(job.data, dbJobId);
-        console.log(`✅ BullMQ Job ${job.id} completed successfully.`);
+        logger.info({ jobId: job.id, sourceId: job.data.sourceId }, 'Ingestion job completed');
       },
       {
         connection: redisConnection,
@@ -166,8 +169,13 @@ export function startIngestionWorker(): Worker<ProcessSourceParams> | null {
       }
     );
 
+    worker.on('completed', () => {
+      ingestionJobsTotal.inc({ status: 'success' });
+    });
+
     worker.on('failed', async (job, err) => {
-      console.error(`💥 BullMQ Job ${job?.id} failed with error:`, err.message);
+      ingestionJobsTotal.inc({ status: 'failed' });
+      logger.error({ jobId: job?.id, sourceId: job?.data?.sourceId, err: err.message }, 'Ingestion job failed');
       if (job?.data?.sourceId && job?.data?.jobId) {
         await ingestionJobService.recordStageEvent(
           job.data.jobId,
@@ -182,7 +190,7 @@ export function startIngestionWorker(): Worker<ProcessSourceParams> | null {
 
     return worker;
   } catch {
-    console.warn('⚠️ Redis not connected; BullMQ worker skipped.');
+    logger.warn('Redis not connected; BullMQ worker skipped');
     return null;
   }
 }

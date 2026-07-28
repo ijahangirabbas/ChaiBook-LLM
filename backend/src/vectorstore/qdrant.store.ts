@@ -7,6 +7,10 @@ import { config } from '../config/env.config';
 import { getEmbeddingsProvider, getEmbeddingModelName } from '../config/embeddings.config';
 import { IVectorStore, VectorSearchResult } from './base.vectorstore';
 import { chunkRepository } from '../repositories/chunk.repository';
+import { logger } from '../lib/logger';
+import { embeddingDuration } from '../lib/metrics';
+
+const QDRANT_UPSERT_BATCH_SIZE = 100;
 
 export class QdrantVectorStore implements IVectorStore {
   private embeddings: Embeddings;
@@ -28,7 +32,9 @@ export class QdrantVectorStore implements IVectorStore {
 
     const embeddingModel = getEmbeddingModelName();
     const texts = splitDocs.map((doc) => doc.pageContent);
+    const embedStart = process.hrtime.bigint();
     const vectors = await this.embeddings.embedDocuments(texts);
+    embeddingDuration.observe(Number(process.hrtime.bigint() - embedStart) / 1_000_000_000);
 
     const chunkRecords = splitDocs.map((doc, index) => {
       const chunkId = uuidv4();
@@ -79,12 +85,18 @@ export class QdrantVectorStore implements IVectorStore {
       await chunkRepository.createChunks(chunkRecords.map((c) => c.record));
     }
 
-    await qdrantClient.upsert(config.qdrantCollectionName, {
-      wait: true,
-      points,
-    });
+    for (let i = 0; i < points.length; i += QDRANT_UPSERT_BATCH_SIZE) {
+      const batch = points.slice(i, i + QDRANT_UPSERT_BATCH_SIZE);
+      await qdrantClient.upsert(config.qdrantCollectionName, {
+        wait: true,
+        points: batch,
+      });
+    }
 
-    console.log(`✅ Indexed ${points.length} chunks into Qdrant (model: ${embeddingModel}).`);
+    logger.info(
+      { chunkCount: points.length, batches: Math.ceil(points.length / QDRANT_UPSERT_BATCH_SIZE), embeddingModel },
+      'Indexed chunks into Qdrant'
+    );
   }
 
   async similaritySearch(

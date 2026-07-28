@@ -1,118 +1,17 @@
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Copy, Check, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { Message } from '../../types'
 import { useAppStore } from '../../store/useAppStore'
 import { cn } from '../../lib/utils'
 
+const ProcessedContent = lazy(() =>
+  import('./ProcessedContent').then((m) => ({ default: m.ProcessedContent }))
+)
+
 interface MessageBubbleProps {
   message: Message
   onRegenerate?: () => void
-}
-
-function CitationButton({
-  sourceNum,
-  sources,
-}: {
-  sourceNum: number
-  sources?: Message['sources']
-}) {
-  const { openSourceInspector, sources: storeSources } = useAppStore()
-  const activeSources = sources && sources.length > 0 ? sources : storeSources
-  const targetSource = activeSources.find((s) => s.number === sourceNum)
-
-  return (
-    <button
-      onClick={() => {
-        if (!targetSource) return
-        openSourceInspector(targetSource.id, targetSource, 'retrieved')
-      }}
-      className={cn(
-        'inline-flex items-center justify-center mx-0.5 px-1.5 py-0.2 align-middle',
-        'rounded-md text-[11px] font-bold text-primary dark:text-primary-light',
-        'bg-primary/10 hover:bg-primary/20 dark:bg-primary/20 dark:hover:bg-primary/30',
-        'border border-primary/20 transition-all cursor-pointer select-none'
-      )}
-      title={targetSource ? `Inspect Source ${sourceNum}: ${targetSource.title}` : `Source ${sourceNum}`}
-    >
-      [{sourceNum}]
-    </button>
-  )
-}
-
-function renderTextWithCitations(text: string, sources?: Message['sources']) {
-  const parts = text.split(/(\[\d+\]|\[Source \d+\])/g)
-  return parts.map((part, i) => {
-    const match = part.match(/\[(?:Source )?(\d+)\]/)
-    if (match) {
-      return <CitationButton key={i} sourceNum={parseInt(match[1], 10)} sources={sources} />
-    }
-    return <span key={i}>{part}</span>
-  })
-}
-
-function ProcessedContent({ content, sources }: { content: string; sources?: Message['sources'] }) {
-  return (
-    <div className="prose prose-sm dark:prose-invert max-w-none break-words">
-      <ReactMarkdown
-        components={{
-          p: ({ children }) => {
-            if (typeof children === 'string') {
-              return <p className="mb-2 last:mb-0 leading-relaxed">{renderTextWithCitations(children, sources)}</p>
-            }
-            if (Array.isArray(children) && children.every((c) => typeof c === 'string')) {
-              return (
-                <p className="mb-2 last:mb-0 leading-relaxed">
-                  {renderTextWithCitations(children.join(''), sources)}
-                </p>
-              )
-            }
-            return <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
-          },
-          li: ({ children }) => {
-            if (typeof children === 'string') {
-              return <li className="leading-relaxed">{renderTextWithCitations(children, sources)}</li>
-            }
-            return <li className="leading-relaxed">{children}</li>
-          },
-          code({ className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || '')
-            const code = String(children).replace(/\n$/, '')
-            if (match) {
-              return (
-                <SyntaxHighlighter
-                  style={oneDark}
-                  language={match[1]}
-                  PreTag="div"
-                  className="rounded-lg text-xs my-2 !bg-[#0d1117]"
-                >
-                  {code}
-                </SyntaxHighlighter>
-              )
-            }
-            return (
-              <code
-                className="px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-[12px] font-mono"
-                {...props}
-              >
-                {children}
-              </code>
-            )
-          },
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline">
-              {children}
-            </a>
-          ),
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  )
 }
 
 export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
@@ -159,7 +58,9 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
             isUser ? (
               <p className="whitespace-pre-wrap break-words">{message.content}</p>
             ) : (
-              <ProcessedContent content={message.content} sources={message.sources} />
+              <Suspense fallback={<p className="whitespace-pre-wrap break-words">{message.content}</p>}>
+                <ProcessedContent content={message.content} sources={message.sources} />
+              </Suspense>
             )
           ) : message.isStreaming ? (
             <p className="italic text-text-muted">Thinking…</p>

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../db/prisma.client';
 import { verifyBearerToken } from '../lib/clerk.auth';
 import { sendError } from '../utils/http-response.utils';
+import { logger } from '../lib/logger';
 
 export interface AuthenticatedUser {
   id: string;
@@ -92,7 +93,7 @@ export const authenticateUser = async (
         userId = user.id;
       }
     } catch (dbErr: any) {
-      console.error('💥 Database connection error in auth middleware:', dbErr);
+      logger.error({ err: dbErr }, 'Database connection error in auth middleware');
       sendError(
         res,
         500,
@@ -112,7 +113,7 @@ export const authenticateUser = async (
 
     return next();
   } catch (error: any) {
-    console.error('💥 Auth middleware token verification failed:', error?.message || error);
+    logger.warn({ err: error?.message || error }, 'Auth middleware token verification failed');
     sendError(res, 401, 'AUTH_FAILED', 'Unauthorized: Invalid or expired authentication token');
     return;
   }

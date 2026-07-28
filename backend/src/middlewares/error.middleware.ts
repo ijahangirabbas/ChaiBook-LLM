@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { AppError } from '../errors/app.error';
 import { sendError } from '../utils/http-response.utils';
+import { logger } from '../lib/logger';
 
 export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction): void {
   if (err instanceof AppError) {
@@ -20,5 +21,6 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
   }
 
   console.error('💥 Express Global Error Handler:', err);
+  logger.error({ err, requestId: req.requestId }, 'Unhandled error');
   sendError(res, 500, 'INTERNAL_SERVER_ERROR', err.message || 'Internal Server Error');
 }

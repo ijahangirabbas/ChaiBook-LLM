@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Database, Plus, BookOpen } from 'lucide-react'
@@ -8,6 +8,7 @@ import { useAppStore } from '../../../store/useAppStore'
 import { ApiService } from '../../../services/api.service'
 import type { Source, SourceIndexingStatus } from '../../../types'
 import { cn } from '../../../lib/utils'
+import { useVirtualizer } from '@tanstack/react-virtual'
 
 export function SourcesPage() {
   const navigate = useNavigate()
@@ -16,6 +17,7 @@ export function SourcesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'ready' | 'indexing' | 'error'>('all')
+  const gridScrollRef = useRef<HTMLDivElement>(null)
 
   const loadSources = () => {
     setLoading(true)
@@ -49,6 +51,16 @@ export function SourcesPage() {
     if (filter === 'ready') return s.status === 'ready' || (s.indexingProgress ?? 0) >= 100
     if (filter === 'indexing') return s.status === 'indexing' || s.status === 'uploading'
     return s.status === 'error'
+  })
+
+  const useVirtualGrid = filtered.length > 24
+  const rowCount = useVirtualGrid ? Math.ceil(filtered.length / 4) : 0
+  const rowVirtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => gridScrollRef.current,
+    estimateSize: () => 200,
+    overscan: 3,
+    enabled: useVirtualGrid,
   })
 
   return (
@@ -116,6 +128,52 @@ export function SourcesPage() {
               <p className="text-xs text-text-muted">
                 {filter === 'all' ? 'Add a source to get started.' : `No sources with status "${filter}".`}
               </p>
+            </div>
+          ) : useVirtualGrid ? (
+            <div ref={gridScrollRef} className="max-h-[70vh] overflow-y-auto">
+              <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const start = virtualRow.index * 4
+                  const rowSources = filtered.slice(start, start + 4)
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4"
+                    >
+                      {rowSources.map((source) => (
+                        <div key={source.id} className="space-y-2">
+                          <SourceCard
+                            source={source}
+                            onClick={() => {
+                              if (source.notebookId) setActiveNotebook(source.notebookId)
+                              openSourceInspector(source.id, source, 'overview')
+                            }}
+                          />
+                          {source.notebookId && (
+                            <button
+                              onClick={() => {
+                                setActiveNotebook(source.notebookId!)
+                                navigate(`/chat/${source.notebookId}`)
+                              }}
+                              className="text-[10px] text-primary font-semibold flex items-center gap-1 hover:underline px-1"
+                            >
+                              <BookOpen className="w-3 h-3" />
+                              Open notebook
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

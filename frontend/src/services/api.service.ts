@@ -353,89 +353,132 @@ export class ApiService {
       onConversationStarted?: (conversationId: string) => void;
     }
   ): Promise<void> {
-    const controller = new AbortController();
     const timeoutMs = options?.timeoutMs ?? 120_000;
-    const timeoutId = setTimeout(() => {
-      controller.abort(new DOMException('Chat stream timed out', 'TimeoutError'));
-    }, timeoutMs);
+    let lastEventId: string | null = null;
+    let completed = false;
+    let attempt = 0;
+    const maxAttempts = 2;
 
-    const relayAbort = () => controller.abort(options?.signal?.reason);
-    options?.signal?.addEventListener('abort', relayAbort);
+    while (attempt < maxAttempts && !completed) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort(new DOMException('Chat stream timed out', 'TimeoutError'));
+      }, timeoutMs);
 
-    try {
-      const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/chat`, {
-        method: 'POST',
-        headers: await this.headers(true),
-        body: JSON.stringify({
-          message,
-          ...(options?.conversationId ? { conversationId: options.conversationId } : {}),
-          ...(options?.regenerate ? { regenerate: true } : {}),
-        }),
-        signal: controller.signal,
-      });
+      const relayAbort = () => controller.abort(options?.signal?.reason);
+      options?.signal?.addEventListener('abort', relayAbort);
 
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Chat API error (${response.status}): ${text.substring(0, 100)}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('Response body reader not available');
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        if (controller.signal.aborted) {
-          await reader.cancel().catch(() => undefined);
-          throw controller.signal.reason || new Error('Stream cancelled');
+      try {
+        const headers = (await this.headers(true)) as Record<string, string>;
+        if (lastEventId) {
+          headers['Last-Event-ID'] = lastEventId;
         }
 
-        const { done, value } = await reader.read();
-        if (done) break;
+        const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/chat`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            message,
+            ...(options?.conversationId ? { conversationId: options.conversationId } : {}),
+            ...(options?.regenerate ? { regenerate: true } : {}),
+          }),
+          signal: controller.signal,
+        });
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Chat API error (${response.status}): ${text.substring(0, 100)}`);
+        }
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data:')) continue;
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('Response body reader not available');
 
-          const dataStr = trimmed.slice(5).trim();
-          if (dataStr === '[DONE]') {
-            onComplete();
-            return;
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let streamFinished = false;
+
+        while (true) {
+          if (controller.signal.aborted) {
+            await reader.cancel().catch(() => undefined);
+            throw controller.signal.reason || new Error('Stream cancelled');
           }
 
-          try {
-            const parsed = JSON.parse(dataStr);
-            if (parsed.type === 'message.started' && parsed.conversationId && options?.onConversationStarted) {
-              options.onConversationStarted(parsed.conversationId);
-            } else if (parsed.type === 'citations' && Array.isArray(parsed.sources)) {
-              if (onCitations) onCitations(parsed.sources);
-            } else if (parsed.type === 'token.delta' && (parsed.text || parsed.token || parsed.content)) {
-              onChunk(parsed.text || parsed.token || parsed.content);
-            } else if (parsed.type === 'completed' || parsed.type === 'done') {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('id:')) {
+              lastEventId = trimmed.slice(3).trim();
+              continue;
+            }
+            if (!trimmed.startsWith('data:')) continue;
+
+            const dataStr = trimmed.slice(5).trim();
+            if (dataStr === '[DONE]') {
+              completed = true;
+              streamFinished = true;
               onComplete();
               return;
-            } else if (parsed.type === 'failed' || parsed.type === 'error') {
-              onError(new Error(parsed.error || parsed.message || 'Stream failed'));
-              return;
-            } else if (parsed.token || parsed.content || parsed.text) {
-              onChunk(parsed.token || parsed.content || parsed.text);
             }
-          } catch {
-            if (dataStr) onChunk(dataStr);
+
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.type === 'message.started' && parsed.conversationId && options?.onConversationStarted) {
+                options.onConversationStarted(parsed.conversationId);
+              } else if (parsed.type === 'citations' && Array.isArray(parsed.sources)) {
+                if (onCitations) onCitations(parsed.sources);
+              } else if (parsed.type === 'token.delta' && (parsed.text || parsed.token || parsed.content)) {
+                onChunk(parsed.text || parsed.token || parsed.content);
+              } else if (parsed.type === 'completed' || parsed.type === 'done') {
+                completed = true;
+                streamFinished = true;
+                onComplete();
+                return;
+              } else if (parsed.type === 'failed' || parsed.type === 'error') {
+                onError(new Error(parsed.error || parsed.message || 'Stream failed'));
+                return;
+              } else if (parsed.token || parsed.content || parsed.text) {
+                onChunk(parsed.token || parsed.content || parsed.text);
+              }
+            } catch {
+              if (dataStr) onChunk(dataStr);
+            }
           }
         }
+
+        if (!streamFinished && !controller.signal.aborted) {
+          attempt += 1;
+          if (attempt < maxAttempts) continue;
+          onComplete();
+          return;
+        }
+
+        if (!completed) {
+          onComplete();
+        }
+        return;
+      } catch (err) {
+        const isAbort =
+          (err instanceof DOMException && err.name === 'AbortError') ||
+          (err instanceof Error && err.message.toLowerCase().includes('abort'));
+        if (isAbort) {
+          onError(err);
+          return;
+        }
+
+        attempt += 1;
+        if (attempt < maxAttempts) continue;
+        onError(err);
+        return;
+      } finally {
+        clearTimeout(timeoutId);
+        options?.signal?.removeEventListener('abort', relayAbort);
       }
-      onComplete();
-    } catch (err) {
-      onError(err);
-    } finally {
-      clearTimeout(timeoutId);
-      options?.signal?.removeEventListener('abort', relayAbort);
     }
   }
 

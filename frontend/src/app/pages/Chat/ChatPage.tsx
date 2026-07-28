@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { ArrowLeft, Pencil, ChevronDown, ChevronUp, Info } from 'lucide-react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Header } from '../../../components/Header/Header'
 import { ChatInput } from '../../../components/ChatInput/ChatInput'
-import { MessageBubble } from '../../../components/MessageBubble/MessageBubble'
+import { VirtualMessageList } from '../../../components/Chat/VirtualMessageList'
 import { SourceCard } from '../../../components/SourceCard/SourceCard'
 import { useAppStore } from '../../../store/useAppStore'
 import { generateId } from '../../../lib/utils'
@@ -61,6 +61,7 @@ export function ChatPage() {
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState(notebookTitle)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesScrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setTitleInput(notebookTitle)
@@ -375,7 +376,7 @@ export function ChatPage() {
             sourceInspectorOpen && 'md:mr-[340px] lg:mr-[360px]'
           )}
         >
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+          <div ref={messagesScrollRef} className="flex-1 overflow-y-auto px-6 py-6">
             {currentMessages.length === 0 ? (
               <div className="flex-1 h-full flex flex-col items-center justify-center text-center py-16">
                 <motion.div
@@ -409,78 +410,73 @@ export function ChatPage() {
                 </motion.div>
               </div>
             ) : (
-              <AnimatePresence>
-                {currentMessages.map((message) => (
-                  <div key={message.id}>
-                    <MessageBubble
-                      message={message}
-                      onRegenerate={
-                        message.role === 'assistant' && !message.isStreaming
-                          ? () => handleRegenerate(message.id)
-                          : undefined
-                      }
-                    />
+              <VirtualMessageList
+                messages={currentMessages}
+                scrollRef={messagesScrollRef}
+                onRegenerate={handleRegenerate}
+                renderExtras={(message) =>
+                  message.role === 'assistant' &&
+                  message.sources &&
+                  message.sources.length > 0 &&
+                  !message.isStreaming ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="mt-4 ml-11"
+                    >
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
+                          Sources
+                        </span>
+                        <button
+                          className="text-text-muted dark:text-text-muted-dark hover:text-primary transition-colors"
+                          aria-label="Sources information"
+                        >
+                          <Info className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
 
-                    {message.role === 'assistant' && message.sources && message.sources.length > 0 && !message.isStreaming && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="mt-4 ml-11"
-                      >
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
-                            Sources
-                          </span>
-                          <button
-                            className="text-text-muted dark:text-text-muted-dark hover:text-primary transition-colors"
-                            aria-label="Sources information"
-                          >
-                            <Info className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                        {(showAllSources ? message.sources : message.sources.slice(0, 4)).map((source) => (
+                          <SourceCard
+                            key={source.id}
+                            source={source}
+                            onClick={() => openSourceInspector(source.id, source, 'retrieved')}
+                            isActive={useAppStore.getState().activeSourceId === source.id}
+                          />
+                        ))}
+                      </div>
 
-                        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                          {(showAllSources ? message.sources : message.sources.slice(0, 4)).map((source) => (
-                            <SourceCard
-                              key={source.id}
-                              source={source}
-                              onClick={() => openSourceInspector(source.id, source, 'retrieved')}
-                              isActive={useAppStore.getState().activeSourceId === source.id}
-                            />
-                          ))}
-                        </div>
-
-                        {message.sources.length > 4 && (
-                          <motion.button
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                            onClick={() => setShowAllSources(!showAllSources)}
-                            className={cn(
-                              'mt-3 flex items-center gap-2 px-4 py-2 rounded-full',
-                              'border border-border dark:border-border-dark',
-                              'bg-card dark:bg-card-dark',
-                              'text-xs font-semibold text-text-secondary dark:text-text-secondary-dark',
-                              'hover:border-primary/30 hover:text-primary transition-all duration-150'
-                            )}
-                            aria-expanded={showAllSources}
-                          >
-                            {showAllSources ? (
-                              <>
-                                Show less <ChevronUp className="w-3.5 h-3.5" />
-                              </>
-                            ) : (
-                              <>
-                                Show more sources <ChevronDown className="w-3.5 h-3.5" />
-                              </>
-                            )}
-                          </motion.button>
-                        )}
-                      </motion.div>
-                    )}
-                  </div>
-                ))}
-              </AnimatePresence>
+                      {message.sources.length > 4 && (
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => setShowAllSources(!showAllSources)}
+                          className={cn(
+                            'mt-3 flex items-center gap-2 px-4 py-2 rounded-full',
+                            'border border-border dark:border-border-dark',
+                            'bg-card dark:bg-card-dark',
+                            'text-xs font-semibold text-text-secondary dark:text-text-secondary-dark',
+                            'hover:border-primary/30 hover:text-primary transition-all duration-150'
+                          )}
+                          aria-expanded={showAllSources}
+                        >
+                          {showAllSources ? (
+                            <>
+                              Show less <ChevronUp className="w-3.5 h-3.5" />
+                            </>
+                          ) : (
+                            <>
+                              Show more sources <ChevronDown className="w-3.5 h-3.5" />
+                            </>
+                          )}
+                        </motion.button>
+                      )}
+                    </motion.div>
+                  ) : null
+                }
+              />
             )}
 
             <div ref={messagesEndRef} />

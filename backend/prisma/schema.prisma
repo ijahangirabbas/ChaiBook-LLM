@@ -134,6 +134,7 @@ model Source {
   chunks           SourceChunk[]
 
   @@index([workspaceId, notebookId])
+  @@index([workspaceId, status])
   @@map("sources")
 }
 

@@ -5,9 +5,10 @@ import { vectorService } from './vector.service';
 import { config } from '../config/env.config';
 import { RAG_SYSTEM_PROMPT } from '../constants/rag.constants';
 import { CitedSource } from '../types/chat.types';
-import { sendSSEEvent } from '../utils/sse.utils';
+import { sendSSEEvent, resetSSEEventCounter } from '../utils/sse.utils';
 import { conversationRepository } from '../repositories/conversation.repository';
 import { recordTokenUsage } from './workspace-quota.service';
+import { llmTokensTotal } from '../lib/metrics';
 
 function emptyTokenStats() {
   return { totalTokens: 0, promptTokens: 0, completionTokens: 0 };
@@ -25,6 +26,7 @@ export class RagService {
     let fullResponseText = '';
 
     try {
+      resetSSEEventCounter();
       const activeConversationId = conversationId;
 
       if (!activeConversationId) {
@@ -174,6 +176,8 @@ export class RagService {
       }
 
       await recordTokenUsage(workspaceId, totalTokens);
+      llmTokensTotal.inc({ type: 'prompt' }, promptTokens);
+      llmTokensTotal.inc({ type: 'completion' }, completionTokens);
 
       sendSSEEvent(res, { type: 'completed', conversationId: activeConversationId });
       sendSSEEvent(res, { type: 'done' });
