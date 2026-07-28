@@ -9,6 +9,7 @@ import { metricsMiddleware } from './middlewares/metrics.middleware';
 import { getReadinessReport, getLivenessReport } from './services/health.service';
 import { getMetricsText } from './lib/metrics';
 import { config } from './config/env.config';
+import { logger } from './lib/logger';
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.use(
         return callback(null, true);
       }
 
+      logger.warn({ origin, allowedOrigins: config.corsOrigins }, 'CORS request blocked');
       return callback(null, false);
     },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],

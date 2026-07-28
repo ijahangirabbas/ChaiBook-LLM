@@ -79,6 +79,13 @@ function assertProductionConfig(): void {
   if (config.corsOrigins.length === 0 || config.corsOrigins.includes('*')) {
     missing.push('CORS_ORIGINS (explicit production domain(s), no wildcard)');
   }
+  const onlyLocalhostOrigins = config.corsOrigins.every(
+    (origin) =>
+      origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')
+  );
+  if (onlyLocalhostOrigins) {
+    missing.push('CORS_ORIGINS (must include your production frontend URL, not only localhost)');
+  }
   if (!config.awsAccessKeyId || !config.awsSecretAccessKey) {
     missing.push('AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY');
   }
