@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useUser } from '@clerk/clerk-react'
 import { Router } from './app/router'
 import { useAppStore } from './store/useAppStore'
+import { ApiService } from './services/api.service'
 
 export default function App() {
   const { login, logout, fetchNotebooksFromApi } = useAppStore()
@@ -27,9 +28,16 @@ export default function App() {
         name,
         email,
         avatar: user.imageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email || user.id}`,
-        plan: 'pro',
-        storage: { used: 1.2, total: 10 },
+        plan: 'free',
+        storage: { used: 0, total: 5 },
       })
+      ApiService.getSettings()
+        .then((settings) => {
+          useAppStore.setState({ theme: settings.theme })
+          if (settings.theme === 'dark') document.documentElement.classList.add('dark')
+          else document.documentElement.classList.remove('dark')
+        })
+        .catch(() => {})
       fetchNotebooksFromApi()
     } else {
       // User is not signed into Clerk: clear any stale local state

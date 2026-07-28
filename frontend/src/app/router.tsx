@@ -10,6 +10,9 @@ const LoginPage = lazy(() => import('./pages/Login/LoginPage').then(m => ({ defa
 const DashboardPage = lazy(() => import('./pages/Dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const NotebooksPage = lazy(() => import('./pages/Notebooks/NotebooksPage').then(m => ({ default: m.NotebooksPage })))
 const NotebookPage = lazy(() => import('./pages/Notebook/NotebookPage').then(m => ({ default: m.NotebookPage })))
+const ChatsPage = lazy(() => import('./pages/Chats/ChatsPage').then(m => ({ default: m.ChatsPage })))
+const SourcesPage = lazy(() => import('./pages/Sources/SourcesPage').then(m => ({ default: m.SourcesPage })))
+const SettingsPage = lazy(() => import('./pages/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })))
 const ChatPage = lazy(() => import('./pages/Chat/ChatPage').then(m => ({ default: m.ChatPage })))
 
 // Loading fallback
@@ -111,7 +114,7 @@ const router = createBrowserRouter([
         path: '/sources',
         element: (
           <Suspense fallback={<PageLoader />}>
-            <DashboardPage />
+            <SourcesPage />
           </Suspense>
         ),
       },
@@ -119,7 +122,15 @@ const router = createBrowserRouter([
         path: '/chats',
         element: (
           <Suspense fallback={<PageLoader />}>
-            <DashboardPage />
+            <ChatsPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/settings',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SettingsPage />
           </Suspense>
         ),
       },

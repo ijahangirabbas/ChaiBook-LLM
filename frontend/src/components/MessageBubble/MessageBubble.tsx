@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Copy, Check, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { Message } from '../../types'
 import { useAppStore } from '../../store/useAppStore'
 import { cn } from '../../lib/utils'
@@ -10,38 +13,104 @@ interface MessageBubbleProps {
   onRegenerate?: () => void
 }
 
-function ProcessedContent({ content, sources }: { content: string; sources?: Message['sources'] }) {
+function CitationButton({
+  sourceNum,
+  sources,
+}: {
+  sourceNum: number
+  sources?: Message['sources']
+}) {
   const { openSourceInspector, sources: storeSources } = useAppStore()
   const activeSources = sources && sources.length > 0 ? sources : storeSources
-
-  // Regex matches [1], [2], [Source 1], etc.
-  const parts = content.split(/(\[\d+\]|\[Source \d+\])/g)
+  const targetSource = activeSources.find((s) => s.number === sourceNum)
 
   return (
-    <div className="whitespace-pre-wrap break-words">
-      {parts.map((part, i) => {
-        const match = part.match(/\[(?:Source )?(\d+)\]/)
-        if (match) {
-          const sourceNum = parseInt(match[1], 10)
-          const targetSource = activeSources.find((s) => s.number === sourceNum)
-          return (
-            <button
-              key={i}
-              onClick={() => targetSource && openSourceInspector(targetSource.id, targetSource, 'retrieved')}
-              className={cn(
-                'inline-flex items-center justify-center mx-0.5 px-1.5 py-0.2',
-                'rounded-md text-[11px] font-bold text-primary dark:text-primary-light',
-                'bg-primary/10 hover:bg-primary/20 dark:bg-primary/20 dark:hover:bg-primary/30',
-                'border border-primary/20 transition-all cursor-pointer select-none'
-              )}
-              title={targetSource ? `Inspect Source ${sourceNum}: ${targetSource.title}` : `Source ${sourceNum}`}
-            >
-              [{sourceNum}]
-            </button>
-          )
-        }
-        return <span key={i}>{part}</span>
-      })}
+    <button
+      onClick={() => {
+        if (!targetSource) return
+        openSourceInspector(targetSource.id, targetSource, 'retrieved')
+      }}
+      className={cn(
+        'inline-flex items-center justify-center mx-0.5 px-1.5 py-0.2 align-middle',
+        'rounded-md text-[11px] font-bold text-primary dark:text-primary-light',
+        'bg-primary/10 hover:bg-primary/20 dark:bg-primary/20 dark:hover:bg-primary/30',
+        'border border-primary/20 transition-all cursor-pointer select-none'
+      )}
+      title={targetSource ? `Inspect Source ${sourceNum}: ${targetSource.title}` : `Source ${sourceNum}`}
+    >
+      [{sourceNum}]
+    </button>
+  )
+}
+
+function renderTextWithCitations(text: string, sources?: Message['sources']) {
+  const parts = text.split(/(\[\d+\]|\[Source \d+\])/g)
+  return parts.map((part, i) => {
+    const match = part.match(/\[(?:Source )?(\d+)\]/)
+    if (match) {
+      return <CitationButton key={i} sourceNum={parseInt(match[1], 10)} sources={sources} />
+    }
+    return <span key={i}>{part}</span>
+  })
+}
+
+function ProcessedContent({ content, sources }: { content: string; sources?: Message['sources'] }) {
+  return (
+    <div className="prose prose-sm dark:prose-invert max-w-none break-words">
+      <ReactMarkdown
+        components={{
+          p: ({ children }) => {
+            if (typeof children === 'string') {
+              return <p className="mb-2 last:mb-0 leading-relaxed">{renderTextWithCitations(children, sources)}</p>
+            }
+            if (Array.isArray(children) && children.every((c) => typeof c === 'string')) {
+              return (
+                <p className="mb-2 last:mb-0 leading-relaxed">
+                  {renderTextWithCitations(children.join(''), sources)}
+                </p>
+              )
+            }
+            return <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+          },
+          li: ({ children }) => {
+            if (typeof children === 'string') {
+              return <li className="leading-relaxed">{renderTextWithCitations(children, sources)}</li>
+            }
+            return <li className="leading-relaxed">{children}</li>
+          },
+          code({ className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || '')
+            const code = String(children).replace(/\n$/, '')
+            if (match) {
+              return (
+                <SyntaxHighlighter
+                  style={oneDark}
+                  language={match[1]}
+                  PreTag="div"
+                  className="rounded-lg text-xs my-2 !bg-[#0d1117]"
+                >
+                  {code}
+                </SyntaxHighlighter>
+              )
+            }
+            return (
+              <code
+                className="px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-[12px] font-mono"
+                {...props}
+              >
+                {children}
+              </code>
+            )
+          },
+          a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   )
 }
@@ -68,19 +137,15 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
       transition={{ duration: 0.3 }}
       className={cn('flex gap-3.5 max-w-3xl', isUser && 'ml-auto flex-row-reverse')}
     >
-      {/* Avatar */}
       <div
         className={cn(
           'w-8 h-8 rounded-full flex items-center justify-center shrink-0 font-semibold text-xs text-white select-none',
-          isUser
-            ? 'bg-[#5B46F6]'
-            : 'bg-[#5B46F6]'
+          'bg-[#5B46F6]'
         )}
       >
         {isUser ? 'M' : '☕'}
       </div>
 
-      {/* Bubble Container */}
       <div className="flex-1 min-w-0">
         <div
           className={cn(
@@ -90,16 +155,23 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
               : 'bg-card dark:bg-[#0A0A0A] text-text-primary dark:text-text-primary-dark border border-border dark:border-[#1C1C1C] rounded-tl-xs'
           )}
         >
-          {/* Content with interactive citation parsing */}
           {message.content.trim() ? (
-            <ProcessedContent content={message.content} sources={message.sources} />
+            isUser ? (
+              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            ) : (
+              <ProcessedContent content={message.content} sources={message.sources} />
+            )
+          ) : message.isStreaming ? (
+            <p className="italic text-text-muted">Thinking…</p>
           ) : (
             <p className="italic text-text-muted">No answer generated for this query.</p>
           )}
+          {message.isStreaming && message.content.trim() && (
+            <span className="inline-block w-1.5 h-4 ml-0.5 bg-primary animate-pulse align-middle" />
+          )}
         </div>
 
-        {/* Cited Sources Badge List */}
-        {!isUser && message.sources && message.sources.length > 0 && (
+        {!isUser && !message.isStreaming && message.sources && message.sources.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-1">
             <span className="text-[11px] font-semibold text-text-muted dark:text-text-muted-dark mr-1">
               Cited Sources:
@@ -123,8 +195,7 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
           </div>
         )}
 
-        {/* Action bar for assistant messages */}
-        {!isUser && (
+        {!isUser && !message.isStreaming && (
           <div className="flex items-center gap-1 mt-2 ml-1 text-text-muted dark:text-text-muted-dark">
             <button
               onClick={handleCopy}

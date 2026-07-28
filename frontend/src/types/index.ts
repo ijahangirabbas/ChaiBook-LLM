@@ -19,6 +19,7 @@ export interface TimelineSegment {
 }
 
 export interface SourceChunk {
+  chunkId?: string
   retrievedChunk: string
   pageNumber?: number
   similarity?: number
@@ -47,6 +48,7 @@ export interface Source {
   charOffset?: { start: number; end: number }
   transcript?: TranscriptEntry[]
   chunkIndex?: number
+  chunkId?: string
   chunks?: SourceChunk[]
   pagesText?: string
 }
@@ -194,10 +196,12 @@ export interface AppState {
   setSidebarMode: (mode: SidebarMode) => void
   setActiveNotebook: (id: string | null) => void
   fetchNotebooksFromApi: () => Promise<void>
-  createChatSession: (notebookId: string, title?: string) => string
+  createChatSession: (notebookId: string, title?: string) => Promise<string>
   switchChatSession: (sessionId: string) => void
-  deleteChatSession: (sessionId: string) => void
+  deleteChatSession: (sessionId: string) => Promise<void>
   addMessage: (message: Message) => void
+  updateMessage: (messageId: string, patch: Partial<Message>) => void
+  removeMessage: (messageId: string) => void
   setStreaming: (streaming: boolean) => void
   openSourceInspector: (sourceId: string, customSource?: Source, defaultTab?: 'overview' | 'retrieved') => void
   closeSourceInspector: () => void

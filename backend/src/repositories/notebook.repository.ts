@@ -1,5 +1,6 @@
 import { prisma } from '../db/prisma.client';
 import { NotebookModel } from '../services/notebook.service';
+import { vectorService } from '../services/vector.service';
 
 export interface PaginatedResult<T> {
   data: T[];
@@ -60,15 +61,8 @@ export class NotebookRepository {
         },
       };
     } catch (err) {
-      return {
-        data: [],
-        pagination: {
-          page: 1,
-          limit,
-          total: 0,
-          totalPages: 1,
-        },
-      };
+      console.error('Database error in getNotebooks:', err);
+      throw new Error('Failed to fetch notebooks from database');
     }
   }
 
@@ -98,7 +92,8 @@ export class NotebookRepository {
         updatedAt: nb.updatedAt,
       };
     } catch (err) {
-      return undefined;
+      console.error(`Database error in getNotebookById for ${id}:`, err);
+      throw new Error('Failed to fetch notebook from database');
     }
   }
 
@@ -156,19 +151,8 @@ export class NotebookRepository {
         updatedAt: created.updatedAt,
       };
     } catch (err: any) {
-      console.warn(`⚠️ Database connection error during createNotebook: ${err.message || err}. Falling back to transient notebook object.`);
-      return {
-        id: `nb-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        title: data.title,
-        description: data.description || undefined,
-        color: data.color || 'indigo',
-        icon: data.icon || 'book',
-        sourceCount: 0,
-        workspaceId: data.workspaceId,
-        userId: data.userId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+      console.error('Database error during createNotebook:', err);
+      throw new Error(`Failed to create notebook: ${err.message || 'Database unavailable'}`);
     }
   }
 
@@ -230,6 +214,7 @@ export class NotebookRepository {
             title: s.title,
             url: s.url,
             s3Key: s.s3Key,
+            rawContent: s.rawContent,
             status: s.status,
           })),
         },
@@ -283,9 +268,23 @@ export class NotebookRepository {
   async deleteNotebook(id: string, workspaceId: string): Promise<boolean> {
     const existing = await prisma.notebook.findFirst({
       where: { id, workspaceId, deletedAt: null },
+      include: { sources: { where: { deletedAt: null } } },
     });
 
     if (!existing) return false;
+
+    for (const source of existing.sources) {
+      try {
+        await vectorService.deleteSourceVectors(source.id);
+      } catch (err) {
+        console.warn(`⚠️ Failed to delete vectors for source ${source.id}:`, (err as Error).message);
+      }
+    }
+
+    await prisma.source.updateMany({
+      where: { notebookId: id, workspaceId, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
 
     await prisma.notebook.update({
       where: { id },

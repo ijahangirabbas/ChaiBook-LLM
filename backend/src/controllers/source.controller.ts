@@ -7,9 +7,20 @@ import { SourceType } from '../types/source.types';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import { notebookRepository } from '../repositories/notebook.repository';
 import { sourceRepository } from '../repositories/source.repository';
+import { chunkRepository } from '../repositories/chunk.repository';
+import { secondsToTimeString } from '../utils/timestamp.utils';
 import { enqueueIngestionJob } from '../queue/ingestion.queue';
 import { ingestionJobService } from '../services/job.service';
 import { config } from '../config/env.config';
+import { uploadIntentSchema, createSourceSchema, cursorPaginationQuerySchema } from '../validators';
+import { assertSafeUrl } from '../utils/url-safety.utils';
+import { validateUploadedFile } from '../utils/file-validation.utils';
+import { sendError, sendSuccess, sendJson } from '../utils/http-response.utils';
+import { buildCursorResult } from '../utils/cursor-pagination.utils';
+import {
+  assertIngestionConcurrency,
+  incrementIngestionConcurrency,
+} from '../services/workspace-quota.service';
 
 export class SourceController {
   // POST /api/v1/notebooks/:notebookId/sources/upload-intent
@@ -17,15 +28,12 @@ export class SourceController {
     try {
       const { notebookId } = req.params;
       const workspaceId = req.user?.workspaceId || 'default';
-      const { filename, contentType } = req.body;
+      const validated = uploadIntentSchema.parse(req.body);
+      const { filename, contentType } = validated;
 
       const notebook = await notebookRepository.getNotebookById(notebookId, workspaceId);
       if (!notebook) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Notebook with ID "${notebookId}" not found in active workspace.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Notebook with ID "${notebookId}" not found in active workspace.`);
         return;
       }
 
@@ -45,14 +53,11 @@ export class SourceController {
         status: 'uploading',
       });
 
-      res.status(200).json({
-        success: true,
-        data: {
-          sourceId,
-          s3Key,
-          uploadUrl: presigned?.uploadUrl || null,
-          expiresInSeconds: 3600,
-        },
+      sendSuccess(res, {
+        sourceId,
+        s3Key,
+        uploadUrl: presigned?.uploadUrl || null,
+        expiresInSeconds: 3600,
       });
     } catch (error) {
       next(error);
@@ -68,32 +73,38 @@ export class SourceController {
       // Enforce notebook ownership check
       const notebook = await notebookRepository.getNotebookById(notebookId, workspaceId);
       if (!notebook) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Notebook with ID "${notebookId}" not found in active workspace.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Notebook with ID "${notebookId}" not found in active workspace.`);
         return;
       }
 
       const file = req.file;
-      const url = req.body.url;
-      const content = req.body.content;
+      const validated = createSourceSchema.parse({
+        type: req.body.type,
+        title: req.body.title,
+        url: req.body.url,
+        content: req.body.content,
+      });
 
-      if (!file && !url && !content) {
-        res.status(400).json({
-          success: false,
-          code: 'MISSING_SOURCE_DATA',
-          message: 'No file, URL, or raw text content was provided in the upload request.',
-        });
+      if (!file && !validated.url && !validated.content) {
+        sendError(res, 400, 'MISSING_SOURCE_DATA', 'No file, URL, or raw text content was provided in the upload request.');
         return;
       }
 
-      const sourceType = (req.body.type || (file ? this.detectFileType(file.originalname) : 'text')) as SourceType;
-      const title = req.body.title || (file ? file.originalname : url || 'Untitled Source');
+      const sourceType = (file
+        ? validateUploadedFile(file.path, file.originalname, file.mimetype || '')
+        : validated.type || 'text') as SourceType;
+      const title = validated.title || (file ? file.originalname : validated.url || 'Untitled Source');
+
+      if (validated.url && (sourceType === 'webpage' || sourceType === 'youtube')) {
+        await assertSafeUrl(validated.url);
+      }
+
+      await assertIngestionConcurrency(workspaceId);
 
       const sourceId = uuidv4();
       let s3Key: string | undefined;
+      const url = validated.url;
+      const content = validated.content;
 
       if (file) {
         s3Key = `workspaces/${workspaceId}/notebooks/${notebookId}/sources/${sourceId}-${file.originalname}`;
@@ -111,13 +122,24 @@ export class SourceController {
       }
 
       // Initialize status and durable source record in DB
-      await statusService.createStatus(sourceId, notebookId, title, sourceType, 'uploading', 10, workspaceId);
+      await statusService.createStatus(
+        sourceId,
+        notebookId,
+        title,
+        sourceType,
+        'uploading',
+        10,
+        workspaceId,
+        content || undefined,
+        url || undefined
+      );
 
       if (s3Key) {
         await sourceRepository.updateSourceS3Key(sourceId, workspaceId, s3Key, file?.mimetype);
       }
 
       // Enqueue job on BullMQ queue with transactional IngestionJob record
+      await incrementIngestionConcurrency(workspaceId);
       const { jobId } = await enqueueIngestionJob({
         sourceId,
         notebookId,
@@ -131,7 +153,7 @@ export class SourceController {
       });
 
       // Immediate 202 Accepted response
-      res.status(202).json({
+      sendJson(res, 202, {
         success: true,
         sourceId,
         jobId,
@@ -147,6 +169,29 @@ export class SourceController {
   }
 
   // GET /api/v1/sources/:sourceId/status
+  // GET /api/v1/sources
+  async listWorkspaceSources(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const workspaceId = req.user?.workspaceId || 'default';
+      const { cursor, limit } = cursorPaginationQuerySchema.parse(req.query);
+      const rows = await sourceRepository.getSourcesForWorkspace(workspaceId, { cursor, limit });
+      const page = buildCursorResult(
+        rows.map((r) => ({ id: r.id, updatedAt: r.updatedAt })),
+        limit
+      );
+      const items = page.items.map((item) => rows.find((r) => r.id === item.id)!);
+
+      sendSuccess(res, items, 200, {
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        limit,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/v1/sources/:sourceId/status
   async getSourceStatus(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { sourceId } = req.params;
@@ -154,15 +199,11 @@ export class SourceController {
 
       const source = await sourceRepository.getSourceById(sourceId, workspaceId);
       if (!source) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Source status for ID "${sourceId}" not found.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Source status for ID "${sourceId}" not found.`);
         return;
       }
 
-      res.status(200).json({
+      sendJson(res, 200, {
         success: true,
         sourceId: source.id,
         status: source.status,
@@ -183,17 +224,13 @@ export class SourceController {
 
       const source = await sourceRepository.getSourceById(sourceId, workspaceId);
       if (!source) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Source "${sourceId}" not found.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Source "${sourceId}" not found.`);
         return;
       }
 
       const events = await ingestionJobService.getJobEvents(sourceId);
 
-      res.status(200).json({
+      sendJson(res, 200, {
         success: true,
         sourceId,
         data: events,
@@ -211,11 +248,7 @@ export class SourceController {
 
       const source = await sourceRepository.getSourceById(sourceId, workspaceId);
       if (!source) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Source "${sourceId}" not found.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Source "${sourceId}" not found.`);
         return;
       }
 
@@ -224,18 +257,77 @@ export class SourceController {
         presignedUrl = await s3Service.getPresignedDownloadUrl(source.s3Key);
       }
 
-      res.status(200).json({
-        success: true,
-        data: {
-          id: source.id,
-          title: source.title,
-          type: source.type,
-          url: source.url,
-          s3Key: source.s3Key,
-          presignedDownloadUrl: presignedUrl,
-          status: source.status,
-        },
+      sendSuccess(res, {
+        id: source.id,
+        title: source.title,
+        type: source.type,
+        url: source.url,
+        s3Key: source.s3Key,
+        presignedDownloadUrl: presignedUrl,
+        status: source.status,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/v1/sources/:sourceId/content
+  async getSourceContent(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { sourceId } = req.params;
+      const workspaceId = req.user?.workspaceId || 'default';
+
+      const source = await sourceRepository.getSourceById(sourceId, workspaceId);
+      if (!source) {
+        sendError(res, 404, 'NOT_FOUND', `Source "${sourceId}" not found.`);
+        return;
+      }
+
+      const chunks = await chunkRepository.getChunksForSource(sourceId, workspaceId);
+
+      sendSuccess(res, {
+        sourceId: source.id,
+        title: source.title,
+        type: source.type,
+        url: source.url,
+        rawContent: source.rawContent || null,
+        metadata: source.metadataJson || null,
+        pageCount: source.pageCount || null,
+        chunks,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/v1/sources/:sourceId/transcript
+  async getSourceTranscript(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { sourceId } = req.params;
+      const workspaceId = req.user?.workspaceId || 'default';
+
+      const source = await sourceRepository.getSourceById(sourceId, workspaceId);
+      if (!source) {
+        sendError(res, 404, 'NOT_FOUND', `Source "${sourceId}" not found.`);
+        return;
+      }
+
+      const metadata = (source.metadataJson || {}) as { transcript?: Array<{ timestamp: string; seconds: number; text: string }> };
+      if (metadata.transcript && metadata.transcript.length > 0) {
+        sendSuccess(res, { sourceId, segments: metadata.transcript });
+        return;
+      }
+
+      const chunks = await chunkRepository.getChunksForSource(sourceId, workspaceId);
+      const segments = chunks
+        .filter((c) => c.startSeconds != null)
+        .map((c) => ({
+          timestamp: secondsToTimeString(c.startSeconds!),
+          seconds: c.startSeconds!,
+          text: c.text,
+        }));
+
+      sendSuccess(res, { sourceId, segments });
     } catch (error) {
       next(error);
     }
@@ -249,17 +341,13 @@ export class SourceController {
 
       const deleted = await sourceRepository.deleteSource(sourceId, workspaceId);
       if (!deleted) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Source "${sourceId}" not found or unauthorized.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Source "${sourceId}" not found or unauthorized.`);
         return;
       }
 
       await sourceService.deleteSource(sourceId, workspaceId);
 
-      res.status(200).json({
+      sendJson(res, 200, {
         success: true,
         sourceId,
         message: `Source "${sourceId}" deleted successfully.`,
@@ -277,17 +365,13 @@ export class SourceController {
 
       const source = await sourceRepository.getSourceById(sourceId, workspaceId);
       if (!source) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Source "${sourceId}" not found or unauthorized.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Source "${sourceId}" not found or unauthorized.`);
         return;
       }
 
       await sourceService.reindexSource(sourceId, workspaceId);
 
-      res.status(202).json({
+      sendJson(res, 202, {
         success: true,
         sourceId,
         status: 'uploading',

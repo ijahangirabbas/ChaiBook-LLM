@@ -1,8 +1,46 @@
 import { Document } from '@langchain/core/documents';
 import { YoutubeTranscript } from 'youtube-transcript';
 import { BaseLoader, LoaderInput } from './base.loader';
-import { TranscriptEntry, TimelineSegment } from '../types/source.types';
+import { TranscriptEntry } from '../types/source.types';
 import { secondsToTimeString } from '../utils/timestamp.utils';
+import { assertSafeUrl } from '../utils/url-safety.utils';
+
+const TRANSCRIPT_LANGS = ['en', 'en-US', 'en-GB', 'hi', 'es', 'fr', 'de', 'pt', 'ja', 'ko'];
+
+function isLiveOrShortsUrl(url: string): string | null {
+  const lower = url.toLowerCase();
+  if (lower.includes('/live/') || lower.includes('&live=1')) {
+    return 'Live stream URLs are not supported for transcript ingestion.';
+  }
+  if (lower.includes('/shorts/')) {
+    return null; // shorts can have captions
+  }
+  return null;
+}
+
+async function fetchTranscriptWithFallback(url: string) {
+  const errors: string[] = [];
+
+  for (const lang of TRANSCRIPT_LANGS) {
+    try {
+      const raw = await YoutubeTranscript.fetchTranscript(url, { lang });
+      if (raw && raw.length > 0) return raw;
+    } catch (err) {
+      errors.push(`${lang}: ${(err as Error).message}`);
+    }
+  }
+
+  try {
+    const raw = await YoutubeTranscript.fetchTranscript(url);
+    if (raw && raw.length > 0) return raw;
+  } catch (err) {
+    errors.push(`default: ${(err as Error).message}`);
+  }
+
+  throw new Error(
+    `No captions found for this video in any supported language. ${errors.slice(0, 2).join(' ')}`
+  );
+}
 
 export class YoutubeLoader extends BaseLoader {
   async load(input: LoaderInput): Promise<Document[]> {
@@ -13,21 +51,19 @@ export class YoutubeLoader extends BaseLoader {
     let transcriptEntries: TranscriptEntry[] = [];
 
     if (input.url) {
-      try {
-        const rawTranscript = await YoutubeTranscript.fetchTranscript(input.url);
-        if (rawTranscript && rawTranscript.length > 0) {
-          transcriptEntries = rawTranscript.map((item) => {
-            const startSeconds = Math.floor(item.offset / 1000);
-            return {
-              timestamp: secondsToTimeString(startSeconds),
-              seconds: startSeconds,
-              text: item.text,
-            };
-          });
-        }
-      } catch {
-        // Fallback to rawContent if YouTube transcript fetch fails (disabled CC on video)
-      }
+      await assertSafeUrl(input.url);
+      const liveError = isLiveOrShortsUrl(input.url);
+      if (liveError) throw new Error(liveError);
+
+      const rawTranscript = await fetchTranscriptWithFallback(input.url);
+      transcriptEntries = rawTranscript.map((item) => {
+        const startSeconds = Math.floor(item.offset / 1000);
+        return {
+          timestamp: secondsToTimeString(startSeconds),
+          seconds: startSeconds,
+          text: item.text,
+        };
+      });
     }
 
     if (transcriptEntries.length === 0 && input.rawContent) {
@@ -43,38 +79,12 @@ export class YoutubeLoader extends BaseLoader {
     }
 
     if (transcriptEntries.length === 0) {
-      return [
-        new Document({
-          pageContent: `YouTube Video Source: ${input.title || 'YouTube Video'}\nURL: ${input.url || ''}`,
-          metadata: {
-            notebook_id: input.notebookId,
-            source_id: input.sourceId,
-            source_type: 'youtube',
-            title: input.title || 'YouTube Video',
-            url: input.url,
-            startSeconds: 0,
-            timelineSegment: {
-              start: '00:00',
-              startSeconds: 0,
-              end: '00:00',
-              endSeconds: 0,
-            },
-          },
-        }),
-      ];
+      throw new Error(
+        `No transcript content available for YouTube source "${input.title || input.url || 'unknown'}". ` +
+          'Upload a video with captions enabled or provide transcript text.'
+      );
     }
 
-    const firstSegment = transcriptEntries[0];
-    const lastSegment = transcriptEntries[transcriptEntries.length - 1];
-
-    const timelineSegment: TimelineSegment = {
-      start: firstSegment.timestamp,
-      startSeconds: firstSegment.seconds,
-      end: lastSegment.timestamp,
-      endSeconds: lastSegment.seconds,
-    };
-
-    // Group captions into cohesive paragraph chunks (e.g. 5 caption lines per document chunk)
     const chunkSize = 5;
     const documents: Document[] = [];
 

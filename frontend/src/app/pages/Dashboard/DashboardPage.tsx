@@ -50,34 +50,25 @@ export function DashboardPage() {
       addNotebook(created)
       return created.id
     } catch {
-      const newId = `nb-${Date.now()}`
-      const newNb = {
-        id: newId,
-        title: 'New AI Research Notebook',
-        sourceCount: 0,
-        updatedAt: new Date(),
-        color: 'indigo' as const,
-        icon: 'BookOpen',
-      }
-      addNotebook(newNb)
-      return newId
+      setCreateError('Unable to create a notebook. Check that the server is running and you are signed in.')
+      return null
     }
   }
 
-  const handleChatInput = async (_message: string) => {
+  const navigateToChat = async (message?: string) => {
     const targetId = await ensureNotebook()
     if (targetId) {
       setActiveNotebook(targetId)
-      navigate(`/chat/${targetId}`)
+      navigate(`/chat/${targetId}`, message ? { state: { initialMessage: message } } : undefined)
     }
   }
 
-  const handleQuickAction = async (_prompt: string) => {
-    const targetId = await ensureNotebook()
-    if (targetId) {
-      setActiveNotebook(targetId)
-      navigate(`/chat/${targetId}`)
-    }
+  const handleChatInput = async (message: string) => {
+    await navigateToChat(message)
+  }
+
+  const handleQuickAction = async (prompt: string) => {
+    await navigateToChat(prompt)
   }
 
   const handleCreateNotebookClick = async () => {
@@ -92,18 +83,7 @@ export function DashboardPage() {
       setActiveNotebook(created.id)
       navigate(`/chat/${created.id}`)
     } catch {
-      const newId = `nb-${Date.now()}`
-      const newNb = {
-        id: newId,
-        title: 'Untitled Notebook',
-        sourceCount: 0,
-        updatedAt: new Date(),
-        color: 'indigo' as const,
-        icon: 'BookOpen',
-      }
-      addNotebook(newNb)
-      setActiveNotebook(newId)
-      navigate(`/chat/${newId}`)
+      setCreateError('Unable to create a notebook. Check that the server is running and you are signed in.')
     }
   }
 

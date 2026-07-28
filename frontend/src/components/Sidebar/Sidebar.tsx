@@ -25,13 +25,9 @@ const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
 function DashboardSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { setAddSourceModalOpen, setSourcesModalOpen, addNotebook, setActiveNotebook, notebooks, activeNotebookId, user } = useAppStore()
+  const { setAddSourceModalOpen, addNotebook, setActiveNotebook, notebooks, activeNotebookId, user } = useAppStore()
 
   const handleNavClick = (item: (typeof DASHBOARD_NAV_ITEMS)[0]) => {
-    if (item.id === 'sources') {
-      setSourcesModalOpen(true)
-      return
-    }
     if (item.id === 'new-chat') {
       const handleCreate = async () => {
         try {
@@ -43,19 +39,12 @@ function DashboardSidebar() {
           addNotebook(created)
           setActiveNotebook(created.id)
           navigate(`/chat/${created.id}`)
-        } catch {
-          const newId = `nb-${Date.now()}`
-          const newNb = {
-            id: newId,
-            title: 'Untitled Notebook',
-            sourceCount: 0,
-            updatedAt: new Date(),
-            color: 'indigo' as const,
-            icon: 'BookOpen',
-          }
-          addNotebook(newNb)
-          setActiveNotebook(newId)
-          navigate(`/chat/${newId}`)
+        } catch (err) {
+          window.alert(
+            err instanceof Error
+              ? err.message
+              : 'Unable to create a notebook. Check that the server is running and you are signed in.'
+          )
         }
       }
       handleCreate()
@@ -179,10 +168,10 @@ function DashboardSidebar() {
             </div>
             <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-semibold text-text-primary dark:text-text-primary-dark truncate">
-                {user?.name || 'Munna'}
+                {user?.name || 'User'}
               </p>
               <p className="text-xs text-text-muted dark:text-text-muted-dark truncate">
-                {user?.email || 'munna@example.com'}
+                {user?.email || ''}
               </p>
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark shrink-0" />
@@ -238,19 +227,12 @@ function NotebookSidebar() {
           addNotebook(created)
           setActiveNotebook(created.id)
           navigate(`/chat/${created.id}`)
-        } catch {
-          const newId = `nb-${Date.now()}`
-          const newNb = {
-            id: newId,
-            title: 'Untitled Notebook',
-            sourceCount: 0,
-            updatedAt: new Date(),
-            color: 'indigo' as const,
-            icon: 'BookOpen',
-          }
-          addNotebook(newNb)
-          setActiveNotebook(newId)
-          navigate(`/chat/${newId}`)
+        } catch (err) {
+          window.alert(
+            err instanceof Error
+              ? err.message
+              : 'Unable to create a notebook. Check that the server is running and you are signed in.'
+          )
         }
       }
       handleCreate()
@@ -348,7 +330,7 @@ function NotebookSidebar() {
                       </button>
                     ))}
                     <button
-                      onClick={() => currentNotebookId && createChatSession(currentNotebookId)}
+                      onClick={() => currentNotebookId && void createChatSession(currentNotebookId)}
                       disabled={!currentNotebookId}
                       className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-primary font-semibold hover:bg-primary/5 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -408,10 +390,10 @@ function NotebookSidebar() {
           </div>
           <div className="flex-1 min-w-0 text-left">
             <p className="text-sm font-semibold text-text-primary dark:text-text-primary-dark truncate">
-              {user?.name || 'Munna'}
+              {user?.name || 'User'}
             </p>
             <p className="text-xs text-text-muted dark:text-text-muted-dark truncate">
-              {user?.email || 'munna@example.com'}
+              {user?.email || ''}
             </p>
           </div>
           <ChevronDown className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark shrink-0" />

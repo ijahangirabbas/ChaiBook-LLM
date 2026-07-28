@@ -38,31 +38,10 @@ class StatusService {
     type: SourceType,
     status: SourceIndexingStatus = 'uploading',
     progress = 0,
-    workspaceId = 'default'
+    workspaceId = 'default',
+    rawContent?: string,
+    url?: string
   ): Promise<SourceIndexingState> {
-    // Ensure workspace exists in DB to prevent foreign key error
-    const ws = await prisma.workspace.upsert({
-      where: { id: workspaceId },
-      create: {
-        id: workspaceId,
-        name: 'Personal Workspace',
-        slug: `ws-${workspaceId}`,
-      },
-      update: {},
-    });
-
-    // Ensure notebook exists in DB to prevent foreign key error
-    await prisma.notebook.upsert({
-      where: { id: notebookId },
-      create: {
-        id: notebookId,
-        workspaceId: ws.id,
-        title: 'Active Research Notebook',
-        userId: 'system',
-      },
-      update: {},
-    });
-
     let prismaType: PrismaSourceType = PrismaSourceType.TEXT;
     const upperType = type ? type.toUpperCase() : 'TEXT';
     if (Object.values(PrismaSourceType).includes(upperType as PrismaSourceType)) {
@@ -74,16 +53,20 @@ class StatusService {
       create: {
         id: sourceId,
         notebookId,
-        workspaceId: ws.id,
+        workspaceId,
         title,
         type: prismaType,
         status: this.mapToPrismaStatus(status),
         indexingProgress: progress,
+        ...(rawContent ? { rawContent } : {}),
+        ...(url ? { url } : {}),
       },
       update: {
         title,
         status: this.mapToPrismaStatus(status),
         indexingProgress: progress,
+        ...(rawContent ? { rawContent } : {}),
+        ...(url ? { url } : {}),
       },
     });
 
@@ -131,9 +114,15 @@ class StatusService {
     }
   }
 
-  async getStatus(sourceId: string): Promise<SourceIndexingState | undefined> {
+  async getStatus(sourceId: string, workspaceId?: string): Promise<SourceIndexingState | undefined> {
     try {
-      const source = await prisma.source.findUnique({ where: { id: sourceId } });
+      const source = await prisma.source.findFirst({
+        where: {
+          id: sourceId,
+          deletedAt: null,
+          ...(workspaceId ? { workspaceId } : {}),
+        },
+      });
       if (!source || source.deletedAt) return undefined;
 
       return {

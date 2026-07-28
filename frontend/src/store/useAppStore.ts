@@ -119,64 +119,31 @@ export const useAppStore = create<AppState>()(
       setSidebarMode: (mode: SidebarMode) => set({ sidebarMode: mode }),
 
       setActiveNotebook: (id: string | null) => {
-        const state = get()
         if (!id) {
           set({ activeNotebookId: null, activeChatSessionId: null, messages: [] })
           return
         }
         get().fetchNotebookSources(id)
-
-        const currentSession = state.chatSessions.find((s) => s.id === state.activeChatSessionId)
-        if (state.activeNotebookId === id && currentSession && currentSession.notebookId === id) {
-          return
-        }
-
-        const sessions = state.chatSessions.filter((s) => s.notebookId === id)
-        if (sessions.length > 0) {
-          set({
-            activeNotebookId: id,
-            activeChatSessionId: sessions[0].id,
-            messages: sessions[0].messages,
-          })
-        } else {
-          const newSessId = `chat-sess-${Date.now()}`
-          const newSession = {
-            id: newSessId,
-            notebookId: id,
-            title: `Chat 1: Overview`,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            messages: [],
-          }
-          set({
-            activeNotebookId: id,
-            activeChatSessionId: newSessId,
-            chatSessions: [newSession, ...state.chatSessions],
-            messages: [],
-          })
-        }
       },
 
-      createChatSession: (notebookId: string, title?: string) => {
+      createChatSession: async (notebookId: string, title?: string) => {
+        const conv = await ApiService.createConversation(notebookId, title)
         const state = get()
-        const notebookSessions = state.chatSessions.filter((s) => s.notebookId === notebookId)
-        const nextNum = notebookSessions.length + 1
-        const newSessId = `chat-sess-${Date.now()}`
         const newSession = {
-          id: newSessId,
+          id: conv.id,
           notebookId,
-          title: title || `Chat ${nextNum}: Discussion`,
+          title: conv.title || title || 'New Conversation',
           createdAt: new Date(),
           updatedAt: new Date(),
           messages: [],
         }
         set({
           activeNotebookId: notebookId,
-          activeChatSessionId: newSessId,
-          chatSessions: [newSession, ...state.chatSessions],
+          activeChatSessionId: conv.id,
+          chatSessions: [newSession, ...state.chatSessions.filter((s) => s.notebookId !== notebookId || s.id !== conv.id)],
           messages: [],
         })
-        return newSessId
+        return conv.id
       },
 
       switchChatSession: (sessionId: string) => {
@@ -191,15 +158,23 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      deleteChatSession: (sessionId: string) => {
+      deleteChatSession: async (sessionId: string) => {
+        try {
+          await ApiService.deleteConversation(sessionId)
+        } catch {
+          // proceed with local removal even if API delete fails
+        }
         set((state) => {
           const updated = state.chatSessions.filter((s) => s.id !== sessionId)
-          const activeSess = updated[0] ? updated[0].id : null
-          const activeMsgs = updated[0] ? updated[0].messages : []
+          const wasActive = state.activeChatSessionId === sessionId
+          const notebookSessions = updated.filter(
+            (s) => s.notebookId === state.activeNotebookId
+          )
+          const nextSession = wasActive ? notebookSessions[0] : state.chatSessions.find((s) => s.id === state.activeChatSessionId)
           return {
             chatSessions: updated,
-            activeChatSessionId: activeSess,
-            messages: activeMsgs,
+            activeChatSessionId: wasActive ? (nextSession?.id ?? null) : state.activeChatSessionId,
+            messages: wasActive ? (nextSession?.messages ?? []) : state.messages,
           }
         })
       },
@@ -215,6 +190,34 @@ export const useAppStore = create<AppState>()(
           return {
             messages: [...state.messages, message],
             chatSessions: updatedSessions,
+          }
+        })
+      },
+
+      updateMessage: (messageId: string, patch: Partial<Message>) => {
+        set((state) => {
+          const patchMsg = (m: Message) => (m.id === messageId ? { ...m, ...patch } : m)
+          return {
+            messages: state.messages.map(patchMsg),
+            chatSessions: state.chatSessions.map((sess) =>
+              sess.id === state.activeChatSessionId
+                ? { ...sess, messages: sess.messages.map(patchMsg), updatedAt: new Date() }
+                : sess
+            ),
+          }
+        })
+      },
+
+      removeMessage: (messageId: string) => {
+        set((state) => {
+          const filterMsg = (m: Message) => m.id !== messageId
+          return {
+            messages: state.messages.filter(filterMsg),
+            chatSessions: state.chatSessions.map((sess) =>
+              sess.id === state.activeChatSessionId
+                ? { ...sess, messages: sess.messages.filter(filterMsg), updatedAt: new Date() }
+                : sess
+            ),
           }
         })
       },
@@ -264,14 +267,22 @@ export const useAppStore = create<AppState>()(
         });
       },
 
-      reindexSource: (sourceId: string) =>
+      reindexSource: (sourceId: string) => {
         set((state) => ({
           sources: state.sources.map((s) =>
             s.id === sourceId
               ? { ...s, status: 'indexing' as const, indexingProgress: 20, errorMessage: undefined }
               : s
           ),
-        })),
+        }))
+        ApiService.reindexSource(sourceId).catch(() => {
+          set((state) => ({
+            sources: state.sources.map((s) =>
+              s.id === sourceId ? { ...s, status: 'error' as const, errorMessage: 'Re-index failed' } : s
+            ),
+          }))
+        })
+      },
 
       updateSourceStatus: (sourceId: string, status: SourceIndexingStatus, progress?: number) =>
         set((state) => ({
@@ -332,16 +343,14 @@ export const useAppStore = create<AppState>()(
 
       fetchNotebookChatHistory: async (notebookId: string) => {
         try {
-          const convs = await ApiService.getNotebookConversations(notebookId);
-          if (!convs || convs.length === 0) return;
-
-          const sessions: any[] = [];
-          let activeMessages: any[] = [];
-          let activeSessionId = get().activeChatSessionId;
+          const convs = await ApiService.getNotebookConversations(notebookId)
+          const sessions: any[] = []
+          let activeMessages: any[] = []
+          let activeSessionId = get().activeChatSessionId
 
           for (let i = 0; i < convs.length; i++) {
-            const conv = convs[i];
-            const msgs = await ApiService.getConversationMessages(conv.id);
+            const conv = convs[i]
+            const msgs = await ApiService.getConversationMessages(conv.id)
             const sessionItem = {
               id: conv.id,
               notebookId,
@@ -349,25 +358,33 @@ export const useAppStore = create<AppState>()(
               createdAt: new Date(conv.createdAt || Date.now()),
               updatedAt: new Date(conv.updatedAt || Date.now()),
               messages: msgs,
-            };
-            sessions.push(sessionItem);
+            }
+            sessions.push(sessionItem)
 
-            if (i === 0 && (!activeSessionId || !sessions.some((s) => s.id === activeSessionId))) {
-              activeSessionId = conv.id;
-              activeMessages = msgs;
-            } else if (conv.id === activeSessionId) {
-              activeMessages = msgs;
+            if (conv.id === activeSessionId) {
+              activeMessages = msgs
             }
           }
 
+          const resolvedActiveId =
+            activeSessionId && sessions.some((s) => s.id === activeSessionId)
+              ? activeSessionId
+              : sessions[0]?.id ?? null
+
+          if (!activeMessages.length && resolvedActiveId) {
+            const activeSession = sessions.find((s) => s.id === resolvedActiveId)
+            activeMessages = activeSession?.messages ?? []
+          }
+
           set((state) => {
-            const otherSessions = state.chatSessions.filter((s) => s.notebookId !== notebookId);
+            const otherSessions = state.chatSessions.filter((s) => s.notebookId !== notebookId)
             return {
+              activeNotebookId: notebookId,
               chatSessions: [...sessions, ...otherSessions],
-              activeChatSessionId: activeSessionId || sessions[0]?.id || state.activeChatSessionId,
-              messages: activeMessages.length > 0 ? activeMessages : state.messages,
-            };
-          });
+              activeChatSessionId: resolvedActiveId,
+              messages: activeMessages,
+            }
+          })
         } catch {
           // ignore fetch chat history error
         }

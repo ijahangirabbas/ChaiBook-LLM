@@ -1,27 +1,22 @@
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import { prisma } from '../db/prisma.client';
+import { sendError, sendSuccess } from '../utils/http-response.utils';
 
 export class UserController {
-  // GET /api/v1/me
   async getProfile(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const user = req.user;
-      res.status(200).json({
-        success: true,
-        data: user,
-      });
+      sendSuccess(res, req.user);
     } catch (error) {
       next(error);
     }
   }
 
-  // GET /api/v1/me/settings
   async getSettings(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user?.id;
       if (!userId) {
-        res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: 'Unauthorized' });
+        sendError(res, 401, 'UNAUTHORIZED', 'Unauthorized');
         return;
       }
 
@@ -39,21 +34,17 @@ export class UserController {
         });
       }
 
-      res.status(200).json({
-        success: true,
-        data: settings,
-      });
+      sendSuccess(res, settings);
     } catch (error) {
       next(error);
     }
   }
 
-  // PATCH /api/v1/me/settings
   async updateSettings(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user?.id;
       if (!userId) {
-        res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: 'Unauthorized' });
+        sendError(res, 401, 'UNAUTHORIZED', 'Unauthorized');
         return;
       }
 
@@ -72,20 +63,15 @@ export class UserController {
         },
       });
 
-      res.status(200).json({
-        success: true,
-        data: updated,
-      });
+      sendSuccess(res, updated);
     } catch (error) {
       next(error);
     }
   }
 
-  // POST /api/v1/me/export
   async exportAccountData(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const workspaceId = req.user?.workspaceId;
-      const userId = req.user?.id;
 
       const [notebooks, sources, conversations] = await Promise.all([
         prisma.notebook.findMany({ where: { workspaceId, deletedAt: null } }),
@@ -96,27 +82,23 @@ export class UserController {
         }),
       ]);
 
-      res.status(200).json({
-        success: true,
-        data: {
-          user: req.user,
-          exportDate: new Date(),
-          notebooks,
-          sources,
-          conversations,
-        },
+      sendSuccess(res, {
+        user: req.user,
+        exportDate: new Date(),
+        notebooks,
+        sources,
+        conversations,
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // DELETE /api/v1/me
   async deleteAccount(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user?.id;
       if (!userId) {
-        res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: 'Unauthorized' });
+        sendError(res, 401, 'UNAUTHORIZED', 'Unauthorized');
         return;
       }
 
@@ -124,10 +106,7 @@ export class UserController {
         where: { id: userId },
       });
 
-      res.status(200).json({
-        success: true,
-        message: 'Account and associated workspace data deleted successfully.',
-      });
+      sendSuccess(res, { message: 'Account and associated workspace data deleted successfully.' });
     } catch (error) {
       next(error);
     }

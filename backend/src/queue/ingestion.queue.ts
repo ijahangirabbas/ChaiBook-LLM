@@ -3,6 +3,7 @@ import IORedis from 'ioredis';
 import { sourceService, ProcessSourceParams } from '../services/source.service';
 import { ingestionJobService } from '../services/job.service';
 import { config } from '../config/env.config';
+import { decrementIngestionConcurrency } from '../services/workspace-quota.service';
 
 const rawRedisUrl = config.redisUrl;
 const isUpstash = rawRedisUrl.includes('upstash.io');
@@ -91,7 +92,7 @@ export async function enqueueIngestionJob(params: ProcessSourceParams): Promise<
 }
 
 async function processIngestionPipeline(params: ProcessSourceParams, jobId: string) {
-  const { sourceId } = params;
+  const { sourceId, workspaceId } = params;
   try {
     await ingestionJobService.recordStageEvent(
       jobId,
@@ -142,6 +143,10 @@ async function processIngestionPipeline(params: ProcessSourceParams, jobId: stri
       err.stack
     );
     throw err;
+  } finally {
+    if (workspaceId) {
+      await decrementIngestionConcurrency(workspaceId);
+    }
   }
 }
 

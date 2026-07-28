@@ -7,6 +7,7 @@ export interface ChatRequest {
 
 export interface CitedSource {
   citationNumber: number;
+  chunk_id?: string;
   source_id: string;
   source_type: string;
   title: string;

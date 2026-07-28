@@ -31,10 +31,7 @@ export class ApiService {
     }
 
     if (!token) {
-      if (import.meta.env.PROD) {
-        throw new Error('Authentication required: no valid session token available.');
-      }
-      token = 'dev-token';
+      throw new Error('Authentication required: no valid session token available.');
     }
 
     return {
@@ -243,6 +240,25 @@ export class ApiService {
   }
 
   // ─── Chat History & Conversation Endpoints ────────────────────────────────
+  static async createConversation(notebookId: string, title?: string): Promise<{ id: string; title: string }> {
+    const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/conversations`, {
+      method: 'POST',
+      headers: await this.headers(true),
+      body: JSON.stringify({ title }),
+    });
+    const json = await this.parseJson(res);
+    const conv = json.data;
+    return { id: conv.id, title: conv.title || title || 'New Conversation' };
+  }
+
+  static async deleteConversation(conversationId: string): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/conversations/${conversationId}`, {
+      method: 'DELETE',
+      headers: await this.headers(),
+    });
+    await this.parseJson(res);
+  }
+
   static async getNotebookConversations(notebookId: string): Promise<any[]> {
     const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/conversations`, { headers: await this.headers() });
     const json = await this.parseJson(res);
@@ -263,14 +279,62 @@ export class ApiService {
             id: c.sourceId || c.id || `cite-${idx}`,
             title: c.title || 'Cited Source',
             number: idx + 1,
+            chunkId: c.chunkId,
             retrievedChunk: c.snippet,
             pageNumber: c.page,
             similarity: c.score,
-            chunks: c.snippet ? [{ retrievedChunk: c.snippet, pageNumber: c.page, similarity: c.score }] : undefined,
+            chunks: c.snippet
+              ? [{ chunkId: c.chunkId, retrievedChunk: c.snippet, pageNumber: c.page, similarity: c.score }]
+              : undefined,
             pagesText: c.page ? `p.${c.page}` : undefined,
           }))
         : undefined),
     }));
+  }
+
+  static async getChunkById(chunkId: string): Promise<any | null> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/chunks/${chunkId}`, { headers: await this.headers() });
+      const json = await this.parseJson(res);
+      return json.data || null;
+    } catch {
+      return null;
+    }
+  }
+
+  static async getSourceContent(sourceId: string): Promise<{
+    rawContent: string | null;
+    metadata: Record<string, unknown> | null;
+    pageCount: number | null;
+    chunks: Array<{
+      id: string;
+      text: string;
+      chunkIndex: number;
+      pageNumber?: number;
+      startSeconds?: number;
+      charOffsetStart?: number;
+      charOffsetEnd?: number;
+    }>;
+  } | null> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/sources/${sourceId}/content`, { headers: await this.headers() });
+      const json = await this.parseJson(res);
+      return json.data || null;
+    } catch {
+      return null;
+    }
+  }
+
+  static async getSourceTranscript(sourceId: string): Promise<{
+    segments: Array<{ timestamp: string; seconds: number; text: string; isCited?: boolean }>;
+  } | null> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/sources/${sourceId}/transcript`, { headers: await this.headers() });
+      const json = await this.parseJson(res);
+      return json.data || null;
+    } catch {
+      return null;
+    }
   }
 
   // ─── SSE RAG Chat Endpoint ───────────────────────────────────────────────
@@ -281,7 +345,13 @@ export class ApiService {
     onComplete: () => void,
     onError: (err: unknown) => void,
     onCitations?: (citations: unknown[]) => void,
-    options?: { signal?: AbortSignal; timeoutMs?: number }
+    options?: {
+      signal?: AbortSignal;
+      timeoutMs?: number;
+      conversationId?: string;
+      regenerate?: boolean;
+      onConversationStarted?: (conversationId: string) => void;
+    }
   ): Promise<void> {
     const controller = new AbortController();
     const timeoutMs = options?.timeoutMs ?? 120_000;
@@ -296,7 +366,11 @@ export class ApiService {
       const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/chat`, {
         method: 'POST',
         headers: await this.headers(true),
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message,
+          ...(options?.conversationId ? { conversationId: options.conversationId } : {}),
+          ...(options?.regenerate ? { regenerate: true } : {}),
+        }),
         signal: controller.signal,
       });
 
@@ -336,7 +410,9 @@ export class ApiService {
 
           try {
             const parsed = JSON.parse(dataStr);
-            if (parsed.type === 'citations' && Array.isArray(parsed.sources)) {
+            if (parsed.type === 'message.started' && parsed.conversationId && options?.onConversationStarted) {
+              options.onConversationStarted(parsed.conversationId);
+            } else if (parsed.type === 'citations' && Array.isArray(parsed.sources)) {
               if (onCitations) onCitations(parsed.sources);
             } else if (parsed.type === 'token.delta' && (parsed.text || parsed.token || parsed.content)) {
               onChunk(parsed.text || parsed.token || parsed.content);
@@ -361,5 +437,99 @@ export class ApiService {
       clearTimeout(timeoutId);
       options?.signal?.removeEventListener('abort', relayAbort);
     }
+  }
+
+  // ─── User & Settings ─────────────────────────────────────────────────────
+  static async getProfile(): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/me`, { headers: await this.headers() });
+    const json = await this.parseJson(res);
+    return json.data || null;
+  }
+
+  static async getSettings(): Promise<{ theme: 'light' | 'dark'; notificationsEnabled: boolean }> {
+    const res = await fetch(`${API_BASE_URL}/me/settings`, { headers: await this.headers() });
+    const json = await this.parseJson(res);
+    return {
+      theme: json.data?.theme === 'dark' ? 'dark' : 'light',
+      notificationsEnabled: json.data?.notificationsEnabled ?? true,
+    };
+  }
+
+  static async updateSettings(data: {
+    theme?: 'light' | 'dark';
+    notificationsEnabled?: boolean;
+  }): Promise<{ theme: 'light' | 'dark'; notificationsEnabled: boolean }> {
+    const res = await fetch(`${API_BASE_URL}/me/settings`, {
+      method: 'PATCH',
+      headers: await this.headers(true),
+      body: JSON.stringify(data),
+    });
+    const json = await this.parseJson(res);
+    return {
+      theme: json.data?.theme === 'dark' ? 'dark' : 'light',
+      notificationsEnabled: json.data?.notificationsEnabled ?? true,
+    };
+  }
+
+  static async exportAccountData(): Promise<any> {
+    const res = await fetch(`${API_BASE_URL}/me/export`, {
+      method: 'POST',
+      headers: await this.headers(),
+    });
+    const json = await this.parseJson(res);
+    return json.data;
+  }
+
+  static async deleteAccount(): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/me`, {
+      method: 'DELETE',
+      headers: await this.headers(),
+    });
+    await this.parseJson(res);
+  }
+
+  // ─── Search & Workspace Lists ────────────────────────────────────────────
+  static async search(query: string): Promise<{
+    notebooks: Array<{ id: string; title: string; sourceCount?: number }>;
+    sources: Array<{ id: string; title: string; type: string; notebookId: string; notebookTitle: string }>;
+    conversations: Array<{ id: string; title: string; notebookId: string; notebookTitle: string }>;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/search?q=${encodeURIComponent(query)}`, {
+      headers: await this.headers(),
+    });
+    const json = await this.parseJson(res);
+    return json.data || { notebooks: [], sources: [], conversations: [] };
+  }
+
+  static async getWorkspaceConversations(): Promise<
+    Array<{
+      id: string;
+      title: string;
+      notebookId: string;
+      updatedAt: string;
+      notebook?: { id: string; title: string };
+      _count?: { messages: number };
+    }>
+  > {
+    const res = await fetch(`${API_BASE_URL}/conversations`, { headers: await this.headers() });
+    const json = await this.parseJson(res);
+    return json.data || [];
+  }
+
+  static async getWorkspaceSources(): Promise<
+    Array<{
+      id: string;
+      title: string;
+      type: string;
+      status: string;
+      notebookId: string;
+      notebookTitle?: string;
+      indexingProgress?: number;
+      errorMessage?: string;
+    }>
+  > {
+    const res = await fetch(`${API_BASE_URL}/sources`, { headers: await this.headers() });
+    const json = await this.parseJson(res);
+    return json.data || [];
   }
 }

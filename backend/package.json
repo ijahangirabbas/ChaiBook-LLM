@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "npx prisma generate && tsc",
+    "build": "tsc",
     "start": "node dist/server.js",
     "prisma:migrate": "npx prisma migrate deploy",
     "prisma:push": "npx prisma db push --accept-data-loss",
@@ -17,18 +17,19 @@
     "test:all": "ts-node tests/test-all.ts",
     "test:api": "ts-node tests/api.test.ts",
     "test:jwt": "ts-node tests/test-jwt.ts",
-    "test:rag": "ts-node tests/test-rag-pipeline.ts"
+    "test:rag": "ts-node tests/test-rag-pipeline.ts",
+    "test:rag-quality": "ts-node tests/test-rag-quality.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.614.0",
     "@aws-sdk/s3-request-presigner": "^3.614.0",
+    "@clerk/backend": "^3.13.2",
     "@langchain/community": "^0.3.0",
     "@langchain/core": "^0.3.0",
     "@langchain/openai": "^0.3.0",
     "@langchain/textsplitters": "^0.1.0",
     "@prisma/client": "^5.16.1",
     "@qdrant/js-client-rest": "^1.11.0",
-    "@supabase/supabase-js": "^2.110.8",
     "@types/jsonwebtoken": "^9.0.10",
     "bullmq": "^5.8.7",
     "cheerio": "^1.0.0",

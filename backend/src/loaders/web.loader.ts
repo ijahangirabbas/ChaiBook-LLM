@@ -1,6 +1,51 @@
+import * as cheerio from 'cheerio';
 import { Document } from '@langchain/core/documents';
-import { CheerioWebBaseLoader } from '@langchain/community/document_loaders/web/cheerio';
 import { BaseLoader, LoaderInput } from './base.loader';
+import { safeFetch } from '../utils/url-safety.utils';
+
+function extractReadableText(html: string, pageUrl: string): { title: string; text: string } {
+  const $ = cheerio.load(html);
+  const pageTitle =
+    $('meta[property="og:title"]').attr('content') ||
+    $('title').first().text().trim() ||
+    'Web Page';
+
+  $('script, style, noscript, nav, footer, header, aside, iframe').remove();
+
+  const candidateSelectors = [
+    'article',
+    'main',
+    '[role="main"]',
+    '.post-content',
+    '.article-content',
+    '.entry-content',
+    '#content',
+  ];
+
+  let text = '';
+  for (const selector of candidateSelectors) {
+    const el = $(selector).first();
+    if (el.length > 0) {
+      text = el.text().replace(/\s+/g, ' ').trim();
+      if (text.length >= 200) break;
+    }
+  }
+
+  if (text.length < 200) {
+    text = $('p, h1, h2, h3, h4, h5, h6, li')
+      .map((_, el) => $(el).text())
+      .get()
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  if (!text) {
+    text = $('body').text().replace(/\s+/g, ' ').trim();
+  }
+
+  return { title: pageTitle, text };
+}
 
 export class WebLoader extends BaseLoader {
   async load(input: LoaderInput): Promise<Document[]> {
@@ -8,37 +53,44 @@ export class WebLoader extends BaseLoader {
       throw new Error('Web Loader requires a valid target URL or content.');
     }
 
-    const domain = input.url ? new URL(input.url).hostname : 'webpage';
-    let docs: Document[] = [];
+    const fetchedAt = new Date().toISOString();
+    let pageTitle = input.title || 'Web Page';
+    let pageContent = input.rawContent || '';
+    let domain = 'webpage';
 
     if (input.url) {
-      try {
-        const loader = new CheerioWebBaseLoader(input.url, {
-          selector: 'p, h1, h2, h3, h4, h5, h6, li, article, section',
-        });
-        docs = await loader.load();
-      } catch {
-        // Fallback to rawContent if fetch fails
-      }
+      const parsed = new URL(input.url);
+      domain = parsed.hostname;
+
+      const response = await safeFetch(input.url);
+      const html = await response.text();
+      const extracted = extractReadableText(html, input.url);
+      pageTitle = extracted.title || pageTitle;
+      pageContent = extracted.text;
     }
 
-    if (docs.length === 0 && input.rawContent) {
-      docs = [new Document({ pageContent: input.rawContent, metadata: {} })];
+    const cleanContent = pageContent.replace(/\s+/g, ' ').trim();
+    if (!cleanContent) {
+      throw new Error(
+        `No readable content could be extracted from "${input.url || input.title}". ` +
+          'The page may be empty, blocked, or require JavaScript to render.'
+      );
     }
 
-    return docs.map((doc) => {
-      const cleanContent = doc.pageContent.replace(/\s+/g, ' ').trim();
-      return new Document({
+    return [
+      new Document({
         pageContent: cleanContent,
         metadata: {
           notebook_id: input.notebookId,
           source_id: input.sourceId,
           source_type: 'webpage',
-          title: input.title || domain,
+          title: pageTitle,
           url: input.url,
-          domain: domain,
+          domain,
+          pageTitle,
+          fetchedAt,
         },
-      });
-    });
+      }),
+    ];
   }
 }

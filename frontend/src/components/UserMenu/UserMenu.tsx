@@ -4,17 +4,19 @@ import { LogOut, Settings, User, X, Check, Moon, Sun } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useClerk, useUser } from '@clerk/clerk-react'
 import { useAppStore } from '../../store/useAppStore'
+import { ApiService } from '../../services/api.service'
 import { cn } from '../../lib/utils'
 
 export function UserMenu() {
   const [open, setOpen] = useState(false)
   const [activeModal, setActiveModal] = useState<'profile' | 'settings' | null>(null)
-  const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [notifications, setNotifications] = useState(true)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
 
   const ref = useRef<HTMLDivElement>(null)
-  const { user: storeUser, logout } = useAppStore()
+  const { user: storeUser, logout, theme } = useAppStore()
   const { user: clerkUser } = useUser()
   const { signOut } = useClerk()
   const navigate = useNavigate()
@@ -49,9 +51,38 @@ export function UserMenu() {
     navigate('/')
   }
 
-  const handleSaveSettings = () => {
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+  useEffect(() => {
+    if (activeModal !== 'settings') return
+    ApiService.getSettings()
+      .then((settings) => {
+        setNotifications(settings.notificationsEnabled)
+        if (settings.theme) {
+          useAppStore.setState({ theme: settings.theme })
+          if (settings.theme === 'dark') document.documentElement.classList.add('dark')
+          else document.documentElement.classList.remove('dark')
+        }
+      })
+      .catch(() => {})
+  }, [activeModal])
+
+  const applyTheme = (next: 'light' | 'dark') => {
+    useAppStore.setState({ theme: next })
+    if (next === 'dark') document.documentElement.classList.add('dark')
+    else document.documentElement.classList.remove('dark')
+  }
+
+  const handleSaveSettings = async () => {
+    setSaving(true)
+    setSettingsError(null)
+    try {
+      await ApiService.updateSettings({ theme, notificationsEnabled: notifications })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : 'Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const initials = realName?.charAt(0).toUpperCase() || 'M'
@@ -127,7 +158,7 @@ export function UserMenu() {
                 <button
                   onClick={() => {
                     setOpen(false)
-                    setActiveModal('settings')
+                    navigate('/settings')
                   }}
                   role="menuitem"
                   className={cn(
@@ -246,7 +277,7 @@ export function UserMenu() {
                       <label className="block text-xs font-semibold text-text-muted uppercase mb-2">Theme</label>
                       <div className="grid grid-cols-2 gap-3">
                         <button
-                          onClick={() => setTheme('light')}
+                          onClick={() => applyTheme('light')}
                           className={cn(
                             'flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-all',
                             theme === 'light'
@@ -257,7 +288,7 @@ export function UserMenu() {
                           <Sun className="w-4 h-4" /> Light Mode
                         </button>
                         <button
-                          onClick={() => setTheme('dark')}
+                          onClick={() => applyTheme('dark')}
                           className={cn(
                             'flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-all',
                             theme === 'dark'
@@ -293,18 +324,21 @@ export function UserMenu() {
                   </div>
 
                   <div className="mt-6 flex items-center justify-between">
-                    {saved ? (
-                      <span className="text-xs text-emerald-600 flex items-center gap-1">
-                        <Check className="w-4 h-4" /> Preferences Saved
-                      </span>
-                    ) : (
-                      <span />
-                    )}
+                    <div className="text-xs">
+                      {saved ? (
+                        <span className="text-emerald-600 flex items-center gap-1">
+                          <Check className="w-4 h-4" /> Preferences Saved
+                        </span>
+                      ) : settingsError ? (
+                        <span className="text-red-500">{settingsError}</span>
+                      ) : null}
+                    </div>
                     <button
                       onClick={handleSaveSettings}
-                      className="px-4 py-2 bg-primary text-white rounded-md text-sm font-medium hover:bg-primary/90 transition-colors"
+                      disabled={saving}
+                      className="px-4 py-2 bg-primary text-white rounded-md text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
                     >
-                      Save Preferences
+                      {saving ? 'Saving…' : 'Save Preferences'}
                     </button>
                   </div>
                 </div>

@@ -1,13 +1,14 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Pencil, ChevronDown, ChevronUp, Info } from 'lucide-react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Header } from '../../../components/Header/Header'
 import { ChatInput } from '../../../components/ChatInput/ChatInput'
 import { MessageBubble } from '../../../components/MessageBubble/MessageBubble'
 import { SourceCard } from '../../../components/SourceCard/SourceCard'
 import { useAppStore } from '../../../store/useAppStore'
 import { generateId } from '../../../lib/utils'
+import { mapCitationsToSources } from '../../../lib/chat.utils'
 import type { Message, Source } from '../../../types'
 import { ApiService } from '../../../services/api.service'
 import { cn } from '../../../lib/utils'
@@ -21,6 +22,9 @@ export function ChatPage() {
     sources,
     messages: storeMessages,
     addMessage,
+    updateMessage,
+    removeMessage,
+    setStreaming,
     updateNotebookTitle,
     openSourceInspector,
     sourceInspectorOpen,
@@ -29,12 +33,16 @@ export function ChatPage() {
     setActiveNotebook,
     chatSessions,
     activeChatSessionId,
+    createChatSession,
     fetchNotebooksFromApi,
+    switchChatSession,
   } = useAppStore()
 
   const currentNotebookId = id
+  const location = useLocation()
+  const streamAbortRef = useRef<AbortController | null>(null)
+  const initialActionRef = useRef(false)
 
-  // Sync active notebook ID in store & fetch notebooks on refresh
   useEffect(() => {
     if (currentNotebookId) {
       setActiveNotebook(currentNotebookId)
@@ -58,13 +66,205 @@ export function ChatPage() {
     setTitleInput(notebookTitle)
   }, [notebookTitle])
 
-  // Scroll to bottom on new message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [currentMessages])
+  }, [currentMessages, isStreaming])
+
+  const runChatStream = useCallback(
+    async (
+      content: string,
+      options?: { regenerate?: boolean; skipUserMessage?: boolean; conversationId?: string }
+    ) => {
+      if (!currentNotebookId) return
+
+      let conversationId = options?.conversationId || activeChatSessionId
+
+      if (!conversationId) {
+        try {
+          conversationId = await createChatSession(currentNotebookId, content.slice(0, 40) || 'New Conversation')
+        } catch (err) {
+          console.error('Failed to create conversation:', err)
+          return
+        }
+      }
+
+      if (!options?.skipUserMessage) {
+        const userMsg: Message = {
+          id: generateId(),
+          role: 'user',
+          content,
+          timestamp: new Date(),
+        }
+        addMessage(userMsg)
+      }
+
+      const aiMsgId = generateId()
+      addMessage({
+        id: aiMsgId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+        isStreaming: true,
+      })
+
+      setIsStreaming(true)
+      setStreaming(true)
+
+      const activeNotebookSources = sources.filter(
+        (s) => !s.notebookId || s.notebookId === currentNotebookId
+      )
+
+      let accumulatedContent = ''
+      let retrievedCitations: any[] = []
+
+      streamAbortRef.current = new AbortController()
+
+      const finish = (sourcesForMessage?: Source[], errorContent?: string) => {
+        updateMessage(aiMsgId, {
+          content:
+            errorContent ||
+            accumulatedContent ||
+            'The response completed without content. Please try again.',
+          sources: sourcesForMessage,
+          isStreaming: false,
+        })
+        setIsStreaming(false)
+        setStreaming(false)
+        streamAbortRef.current = null
+      }
+
+      await ApiService.streamRAGChat(
+        currentNotebookId,
+        content,
+        (token) => {
+          accumulatedContent += token
+          updateMessage(aiMsgId, { content: accumulatedContent, isStreaming: true })
+        },
+        () => {
+          const finalSources = mapCitationsToSources(
+            retrievedCitations,
+            activeNotebookSources,
+            currentNotebookId
+          )
+          finish(finalSources.length > 0 ? finalSources : undefined)
+        },
+        (error) => {
+          const isAbort =
+            (error instanceof DOMException && error.name === 'AbortError') ||
+            (error instanceof Error && error.message.toLowerCase().includes('abort'))
+          if (isAbort) {
+            finish(
+              undefined,
+              accumulatedContent.trim()
+                ? `${accumulatedContent}\n\n_(Generation stopped.)_`
+                : '_(Generation stopped.)_'
+            )
+            return
+          }
+          const isTimeout = error instanceof DOMException && error.name === 'TimeoutError'
+          finish(
+            undefined,
+            accumulatedContent ||
+              (isTimeout
+                ? 'Request timed out. Please try again.'
+                : `Unable to generate a response: ${error instanceof Error ? error.message : 'please try again.'}`)
+          )
+        },
+        (citations) => {
+          retrievedCitations = citations
+        },
+        {
+          signal: streamAbortRef.current.signal,
+          conversationId: conversationId || undefined,
+          regenerate: options?.regenerate,
+          onConversationStarted: (newConversationId) => {
+            if (!activeChatSessionId) {
+              useAppStore.setState({ activeChatSessionId: newConversationId })
+            }
+          },
+        }
+      )
+    },
+    [
+      currentNotebookId,
+      activeChatSessionId,
+      createChatSession,
+      addMessage,
+      updateMessage,
+      setStreaming,
+      sources,
+    ]
+  )
+
+  useEffect(() => {
+    if (!currentNotebookId || loadingNotebooks || !currentNotebook || initialActionRef.current) return
+
+    const state = (location.state || {}) as { initialMessage?: string; conversationId?: string }
+
+    if (state.conversationId) {
+      const sessionExists = chatSessions.some((s) => s.id === state.conversationId)
+      if (sessionExists) {
+        switchChatSession(state.conversationId)
+      }
+    }
+
+    if (state.initialMessage?.trim()) {
+      initialActionRef.current = true
+      const message = state.initialMessage
+      navigate(location.pathname, {
+        replace: true,
+        state: state.conversationId ? { conversationId: state.conversationId } : {},
+      })
+      void runChatStream(message)
+      return
+    }
+
+    if (state.conversationId && chatSessions.some((s) => s.id === state.conversationId)) {
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [
+    chatSessions,
+    currentNotebookId,
+    currentNotebook,
+    loadingNotebooks,
+    location.pathname,
+    location.state,
+    navigate,
+    runChatStream,
+    switchChatSession,
+  ])
+
+  const handleSend = (content: string) => {
+    void runChatStream(content)
+  }
+
+  const handleStop = () => {
+    streamAbortRef.current?.abort(new DOMException('Stream cancelled by user', 'AbortError'))
+  }
+
+  const handleRegenerate = (assistantMessageId: string) => {
+    const assistantIndex = currentMessages.findIndex((m) => m.id === assistantMessageId)
+    if (assistantIndex <= 0) return
+
+    const priorUser = [...currentMessages.slice(0, assistantIndex)]
+      .reverse()
+      .find((m) => m.role === 'user')
+    if (!priorUser) return
+
+    removeMessage(assistantMessageId)
+    void runChatStream(priorUser.content, {
+      regenerate: true,
+      skipUserMessage: true,
+      conversationId: activeChatSessionId || undefined,
+    })
+  }
 
   if (!currentNotebookId) {
-    return <div className="p-8 text-sm text-text-muted">This notebook is unavailable. Return to your dashboard and select a notebook.</div>
+    return (
+      <div className="p-8 text-sm text-text-muted">
+        This notebook is unavailable. Return to your dashboard and select a notebook.
+      </div>
+    )
   }
 
   if (loadingNotebooks) {
@@ -82,8 +282,12 @@ export function ChatPage() {
         <div className="w-16 h-16 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center text-2xl mb-3">
           ⚠️
         </div>
-        <h2 className="text-base font-bold text-text-primary dark:text-text-primary-dark mb-1">Notebook Not Found</h2>
-        <p className="text-xs text-text-muted mb-4">The requested notebook could not be found or you do not have permission to view it.</p>
+        <h2 className="text-base font-bold text-text-primary dark:text-text-primary-dark mb-1">
+          Notebook Not Found
+        </h2>
+        <p className="text-xs text-text-muted mb-4">
+          The requested notebook could not be found or you do not have permission to view it.
+        </p>
         <button
           onClick={() => navigate('/dashboard')}
           className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary/90 transition-colors"
@@ -102,127 +306,6 @@ export function ChatPage() {
     setIsEditingTitle(false)
   }
 
-  const handleSend = async (content: string) => {
-    const userMsg: Message = {
-      id: generateId(),
-      role: 'user',
-      content,
-      timestamp: new Date(),
-    }
-    addMessage(userMsg)
-    setIsStreaming(true)
-
-    const aiMsgId = generateId()
-    const activeNotebookSources = sources.filter(
-      (s) => !s.notebookId || s.notebookId === currentNotebookId
-    )
-
-    let accumulatedContent = ''
-    let retrievedCitations: any[] = []
-
-    await ApiService.streamRAGChat(
-      currentNotebookId,
-      content,
-      (token) => {
-        accumulatedContent += token
-      },
-      () => {
-        let finalSources: Source[] = [];
-        if (retrievedCitations.length > 0) {
-          const groupedMap = new Map<string, Source>();
-          let currentNumber = 1;
-
-          retrievedCitations.forEach((c: any) => {
-            const matchByStoreId = activeNotebookSources.find((s) => s.id === c.source_id);
-            const matchByTitle = activeNotebookSources.find(
-              (s) => c.title && s.title.toLowerCase().includes(c.title.toLowerCase())
-            );
-            const matchedWorkspaceSource = matchByStoreId || matchByTitle;
-
-            const key = matchedWorkspaceSource ? matchedWorkspaceSource.id : (c.source_id || c.title || 'unknown-src');
-            const existing = groupedMap.get(key);
-
-            const chunkItem = {
-              retrievedChunk: c.retrievedChunk,
-              pageNumber: c.pageNumber,
-              similarity: c.similarity,
-              timelineSegment: c.timelineSegment,
-            };
-
-            if (existing) {
-              if (existing.chunks) {
-                existing.chunks.push(chunkItem);
-              }
-              const pagesSet = new Set<number>();
-              existing.chunks?.forEach((ch: any) => {
-                if (ch.pageNumber) pagesSet.add(ch.pageNumber);
-              });
-              if (pagesSet.size > 0) {
-                existing.pagesText = `p.${Array.from(pagesSet).sort((a, b) => a - b).join(', p.')}`;
-              }
-            } else {
-              const pagesText = c.pageNumber ? `p.${c.pageNumber}` : undefined;
-              const rawType = (c.source_type || matchedWorkspaceSource?.type || 'text').toLowerCase();
-              const sourceType = (rawType === 'text' && matchedWorkspaceSource?.type)
-                ? matchedWorkspaceSource.type
-                : (rawType as any);
-
-              const newSource: Source = {
-                id: matchedWorkspaceSource?.id || c.source_id || generateId(),
-                notebookId: currentNotebookId,
-                type: sourceType,
-                title: matchedWorkspaceSource?.title || c.title || 'Knowledge Base Source',
-                url: c.url || matchedWorkspaceSource?.url,
-                domain: c.domain || matchedWorkspaceSource?.domain || (c.url ? new URL(c.url).hostname : 'Knowledge Base'),
-                number: currentNumber++,
-                status: 'ready' as const,
-                retrievedChunk: c.retrievedChunk,
-                similarity: c.similarity,
-                pageNumber: c.pageNumber,
-                totalPages: c.totalPages || matchedWorkspaceSource?.totalPages,
-                timelineSegment: c.timelineSegment,
-                chunks: [chunkItem],
-                pagesText,
-              };
-              groupedMap.set(key, newSource);
-            }
-          });
-
-          finalSources = Array.from(groupedMap.values());
-        } else if (activeNotebookSources.length > 0) {
-          finalSources = activeNotebookSources;
-        }
-
-        const aiMsg: Message = {
-          id: aiMsgId,
-          role: 'assistant',
-          content: accumulatedContent || 'The response completed without content. Please try again.',
-          timestamp: new Date(),
-          sources: finalSources,
-          isStreaming: false,
-        }
-        addMessage(aiMsg)
-        setIsStreaming(false)
-      },
-      (error) => {
-        const aiMsg: Message = {
-          id: aiMsgId,
-          role: 'assistant',
-          content: accumulatedContent || `Unable to generate a response: ${error instanceof Error ? error.message : 'please try again.'}`,
-          timestamp: new Date(),
-          sources: activeNotebookSources,
-          isStreaming: false,
-        }
-        addMessage(aiMsg)
-        setIsStreaming(false)
-      },
-      (citations) => {
-        retrievedCitations = citations
-      }
-    )
-  }
-
-  // Header content with editable title & quick sources modal button
   const headerLeft = (
     <div className="flex items-center gap-3">
       <motion.button
@@ -285,14 +368,13 @@ export function ChatPage() {
     <div className="flex flex-col h-full min-h-0">
       <Header title="Untitled Notebook" leftContent={headerLeft} />
 
-      {/* Message thread + source inspector side by side */}
       <div className="flex flex-1 min-h-0">
-        {/* Message thread */}
-        <div className={cn(
-          'flex flex-col flex-1 min-w-0 transition-all duration-300',
-          sourceInspectorOpen && 'md:mr-[340px] lg:mr-[360px]'
-        )}>
-          {/* Messages scroll area */}
+        <div
+          className={cn(
+            'flex flex-col flex-1 min-w-0 transition-all duration-300',
+            sourceInspectorOpen && 'md:mr-[340px] lg:mr-[360px]'
+          )}
+        >
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
             {currentMessages.length === 0 ? (
               <div className="flex-1 h-full flex flex-col items-center justify-center text-center py-16">
@@ -332,18 +414,20 @@ export function ChatPage() {
                   <div key={message.id}>
                     <MessageBubble
                       message={message}
-                      onRegenerate={() => {}}
+                      onRegenerate={
+                        message.role === 'assistant' && !message.isStreaming
+                          ? () => handleRegenerate(message.id)
+                          : undefined
+                      }
                     />
 
-                    {/* Sources below AI messages */}
-                    {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
+                    {message.role === 'assistant' && message.sources && message.sources.length > 0 && !message.isStreaming && (
                       <motion.div
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.2 }}
                         className="mt-4 ml-11"
                       >
-                        {/* Sources header */}
                         <div className="flex items-center gap-2 mb-3">
                           <span className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
                             Sources
@@ -356,7 +440,6 @@ export function ChatPage() {
                           </button>
                         </div>
 
-                        {/* Horizontal source cards */}
                         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                           {(showAllSources ? message.sources : message.sources.slice(0, 4)).map((source) => (
                             <SourceCard
@@ -368,7 +451,6 @@ export function ChatPage() {
                           ))}
                         </div>
 
-                        {/* Show more / less */}
                         {message.sources.length > 4 && (
                           <motion.button
                             whileHover={{ scale: 1.02 }}
@@ -382,12 +464,15 @@ export function ChatPage() {
                               'hover:border-primary/30 hover:text-primary transition-all duration-150'
                             )}
                             aria-expanded={showAllSources}
-                            aria-label={showAllSources ? 'Show fewer sources' : 'Show more sources'}
                           >
                             {showAllSources ? (
-                              <>Show less <ChevronUp className="w-3.5 h-3.5" /></>
+                              <>
+                                Show less <ChevronUp className="w-3.5 h-3.5" />
+                              </>
                             ) : (
-                              <>Show more sources <ChevronDown className="w-3.5 h-3.5" /></>
+                              <>
+                                Show more sources <ChevronDown className="w-3.5 h-3.5" />
+                              </>
                             )}
                           </motion.button>
                         )}
@@ -398,45 +483,19 @@ export function ChatPage() {
               </AnimatePresence>
             )}
 
-            {/* Streaming indicator */}
-            {isStreaming && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex items-center gap-3"
-              >
-                <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-                  <span className="text-sm">☕</span>
-                </div>
-                <div className={cn(
-                  'px-4 py-3 rounded-[22px] rounded-tl-sm',
-                  'bg-card dark:bg-card-dark border border-border dark:border-border-dark'
-                )}>
-                  <div className="flex items-center gap-1.5">
-                    {[0, 1, 2].map((i) => (
-                      <motion.div
-                        key={i}
-                        animate={{ opacity: [0.3, 1, 0.3] }}
-                        transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-                        className="w-1.5 h-1.5 rounded-full bg-primary"
-                      />
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Bottom input */}
-          <div className={cn(
-            'border-t border-border dark:border-border-dark',
-            'bg-bg dark:bg-bg-dark px-6 py-4'
-          )}>
+          <div
+            className={cn(
+              'border-t border-border dark:border-border-dark',
+              'bg-bg dark:bg-bg-dark px-6 py-4'
+            )}
+          >
             <ChatInput
               onSend={handleSend}
+              onStop={handleStop}
+              isStreaming={isStreaming}
               placeholder="Ask anything about your sources..."
               disabled={isStreaming}
               disclaimer="ChaiBook LLM can make mistakes. Please verify important information."

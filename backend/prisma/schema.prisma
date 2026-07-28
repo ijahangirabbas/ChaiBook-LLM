@@ -34,7 +34,7 @@ enum MessageRole {
 
 model User {
   id              String        @id @default(uuid())
-  supabaseSubject String?       @unique
+  authSubject     String?       @unique @map("supabaseSubject")
   email           String        @unique
   name            String
   avatar          String?
@@ -123,15 +123,40 @@ model Source {
   stage            String         @default("queued")
   indexingProgress Int            @default(0)
   errorMessage     String?
+  rawContent       String?        @db.Text
+  metadataJson     Json?
   pageCount        Int?
   durationSeconds  Int?
   deletedAt        DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   jobs             IngestionJob[]
+  chunks           SourceChunk[]
 
   @@index([workspaceId, notebookId])
   @@map("sources")
+}
+
+model SourceChunk {
+  id              String   @id @default(uuid())
+  sourceId        String
+  source          Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  workspaceId     String
+  notebookId      String
+  text            String   @db.Text
+  textHash        String
+  chunkIndex      Int      @default(0)
+  pageNumber      Int?
+  startSeconds    Int?
+  charOffsetStart Int?
+  charOffsetEnd   Int?
+  qdrantPointId   String   @unique
+  embeddingModel  String?
+  createdAt       DateTime @default(now())
+
+  @@index([sourceId])
+  @@index([workspaceId, notebookId])
+  @@map("source_chunks")
 }
 
 model IngestionJob {

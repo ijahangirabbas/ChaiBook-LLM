@@ -4,8 +4,6 @@ import { Shield, MessageSquare, Database, Zap, FileText, FileCode, AlertCircle }
 import { useSignIn } from '@clerk/clerk-react'
 import { AUTH_FEATURES } from '../../../lib/constants'
 import { cn } from '../../../lib/utils'
-import { useAppStore } from '../../../store/useAppStore'
-import { useNavigate } from 'react-router-dom'
 
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Shield,
@@ -18,33 +16,24 @@ export function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [loadingProvider, setLoadingProvider] = useState<'google' | 'github' | null>(null)
   const { signIn, isLoaded } = useSignIn()
-  const { login, fetchNotebooksFromApi } = useAppStore()
-  const navigate = useNavigate()
+  const clerkConfigured = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY)
 
   const handleGoogleLogin = async () => {
     setErrorMsg(null)
     setLoadingProvider('google')
 
     try {
-      if (isLoaded && signIn) {
-        await signIn.authenticateWithRedirect({
-          strategy: 'oauth_google',
-          redirectUrl: '/sso-callback',
-          redirectUrlComplete: '/dashboard',
-        })
-      } else {
-        // Demo fallback if Clerk is unconfigured
-        login({
-          id: 'demo-user-id',
-          name: 'Demo Researcher',
-          email: 'user@chaibook.ai',
-          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=chaibook',
-          plan: 'pro',
-          storage: { used: 1.2, total: 10 },
-        })
-        await fetchNotebooksFromApi()
-        navigate('/dashboard')
+      if (!clerkConfigured) {
+        throw new Error('Authentication is not configured. Set VITE_CLERK_PUBLISHABLE_KEY in your environment.')
       }
+      if (!isLoaded || !signIn) {
+        throw new Error('Authentication is still loading. Please try again in a moment.')
+      }
+      await signIn.authenticateWithRedirect({
+        strategy: 'oauth_google',
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/dashboard',
+      })
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to authenticate with Google via Clerk')
     } finally {
@@ -57,25 +46,17 @@ export function LoginPage() {
     setLoadingProvider('github')
 
     try {
-      if (isLoaded && signIn) {
-        await signIn.authenticateWithRedirect({
-          strategy: 'oauth_github',
-          redirectUrl: '/sso-callback',
-          redirectUrlComplete: '/dashboard',
-        })
-      } else {
-        // Demo fallback if Clerk is unconfigured
-        login({
-          id: 'demo-user-id',
-          name: 'Demo Researcher',
-          email: 'user@chaibook.ai',
-          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=chaibook',
-          plan: 'pro',
-          storage: { used: 1.2, total: 10 },
-        })
-        await fetchNotebooksFromApi()
-        navigate('/dashboard')
+      if (!clerkConfigured) {
+        throw new Error('Authentication is not configured. Set VITE_CLERK_PUBLISHABLE_KEY in your environment.')
       }
+      if (!isLoaded || !signIn) {
+        throw new Error('Authentication is still loading. Please try again in a moment.')
+      }
+      await signIn.authenticateWithRedirect({
+        strategy: 'oauth_github',
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/dashboard',
+      })
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to authenticate with GitHub via Clerk')
     } finally {

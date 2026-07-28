@@ -53,6 +53,16 @@ export function SourceCard({ source, onClick, isActive }: SourceCardProps) {
   const { reindexSource, removeSource } = useAppStore()
   const config = SOURCE_TYPE_CONFIG[source.type] || SOURCE_TYPE_CONFIG.text
   const status = source.status || 'ready'
+  const progress = source.indexingProgress ?? (status === 'ready' ? 100 : 0)
+
+  const statusLabel =
+    status === 'error'
+      ? 'Failed'
+      : status === 'uploading'
+        ? 'Uploading'
+        : status === 'indexing' || progress < 100
+          ? 'Indexing'
+          : 'Ready'
 
   return (
     <motion.div
@@ -104,27 +114,36 @@ export function SourceCard({ source, onClick, isActive }: SourceCardProps) {
 
       {/* Status Dot Indicator & Label */}
       <div className="flex items-center justify-between gap-1.5 mt-1 pt-1.5 border-t border-border/50 dark:border-white/5">
-        {(status === 'ready' || (source.indexingProgress ?? 0) >= 100) && (
-          <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
-            <span>Ready (Indexed)</span>
+        {status === 'error' ? (
+          <div className="flex items-center justify-between w-full gap-2">
+            <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 font-medium">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+              <span>{statusLabel}</span>
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                reindexSource(source.id)
+              }}
+              className="text-[10px] font-bold text-primary hover:underline"
+            >
+              Retry
+            </button>
           </div>
-        )}
-        {status !== 'ready' && (source.indexingProgress ?? 0) < 100 && status !== 'error' && (
+        ) : status !== 'ready' && progress < 100 ? (
           <div className="flex items-center justify-between w-full text-xs text-amber-600 dark:text-amber-400 font-medium">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-ping" />
-              <span>Indexing...</span>
+              <span>{statusLabel}</span>
             </div>
             <span className="text-[10px] bg-amber-100 dark:bg-amber-950 px-1.5 py-0.5 rounded font-bold">
-              {source.indexingProgress ?? 25}%
+              {progress}%
             </span>
           </div>
-        )}
-        {status === 'error' && (
-          <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 font-medium">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
-            <span>Failed</span>
+        ) : (
+          <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            <span>{statusLabel}</span>
           </div>
         )}
       </div>

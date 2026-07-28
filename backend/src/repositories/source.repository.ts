@@ -1,5 +1,6 @@
-import { prisma } from '../db/prisma.client';
+import { Prisma } from '@prisma/client';
 import { IndexingStatus, SourceType as PrismaSourceType } from '@prisma/client';
+import { prisma } from '../db/prisma.client';
 import { SourceIndexingStatus, SourceType } from '../types/source.types';
 
 export class SourceRepository {
@@ -42,31 +43,9 @@ export class SourceRepository {
     contentType?: string;
     sizeBytes?: number;
     checksum?: string;
+    rawContent?: string;
     status?: SourceIndexingStatus;
   }) {
-    // Ensure parent workspace exists
-    const ws = await prisma.workspace.upsert({
-      where: { id: data.workspaceId },
-      create: {
-        id: data.workspaceId,
-        name: 'Personal Workspace',
-        slug: `ws-${data.workspaceId}`,
-      },
-      update: {},
-    });
-
-    // Ensure parent notebook exists
-    await prisma.notebook.upsert({
-      where: { id: data.notebookId },
-      create: {
-        id: data.notebookId,
-        workspaceId: ws.id,
-        title: 'Active Research Notebook',
-        userId: 'system',
-      },
-      update: {},
-    });
-
     let prismaType: PrismaSourceType = PrismaSourceType.TEXT;
     const upperType = data.type ? data.type.toUpperCase() : 'TEXT';
     if (Object.values(PrismaSourceType).includes(upperType as PrismaSourceType)) {
@@ -77,7 +56,7 @@ export class SourceRepository {
       data: {
         ...(data.sourceId ? { id: data.sourceId } : {}),
         notebookId: data.notebookId,
-        workspaceId: ws.id,
+        workspaceId: data.workspaceId,
         title: data.title,
         type: prismaType,
         url: data.url,
@@ -85,6 +64,7 @@ export class SourceRepository {
         contentType: data.contentType,
         sizeBytes: data.sizeBytes,
         checksum: data.checksum,
+        rawContent: data.rawContent,
         status: this.mapToPrismaStatus(data.status || 'uploading'),
         indexingProgress: 0,
       },
@@ -157,9 +137,27 @@ export class SourceRepository {
       status: this.mapPrismaStatus(source.status),
       indexingProgress: source.indexingProgress,
       errorMessage: source.errorMessage || undefined,
+      rawContent: source.rawContent || undefined,
+      metadataJson: source.metadataJson || undefined,
+      pageCount: source.pageCount || undefined,
       createdAt: source.createdAt,
       updatedAt: source.updatedAt,
     };
+  }
+
+  async updateSourceContent(
+    sourceId: string,
+    workspaceId: string,
+    data: { rawContent?: string; metadataJson?: Record<string, unknown>; pageCount?: number }
+  ): Promise<void> {
+    await prisma.source.updateMany({
+      where: { id: sourceId, workspaceId, deletedAt: null },
+      data: {
+        ...(data.rawContent !== undefined ? { rawContent: data.rawContent } : {}),
+        ...(data.metadataJson !== undefined ? { metadataJson: data.metadataJson as Prisma.InputJsonValue } : {}),
+        ...(data.pageCount !== undefined ? { pageCount: data.pageCount } : {}),
+      },
+    });
   }
 
   async getSourcesForNotebook(notebookId: string, workspaceId: string) {
@@ -180,6 +178,50 @@ export class SourceRepository {
       indexingProgress: s.indexingProgress,
       errorMessage: s.errorMessage || undefined,
       createdAt: s.createdAt,
+    }));
+  }
+
+  async getSourcesForWorkspace(
+    workspaceId: string,
+    options?: { cursor?: string | null; limit?: number }
+  ) {
+    const limit = options?.limit ?? 20;
+    const cursor = options?.cursor
+      ? (JSON.parse(Buffer.from(options.cursor, 'base64url').toString('utf8')) as { updatedAt: string; id: string })
+      : null;
+
+    const sources = await prisma.source.findMany({
+      where: {
+        workspaceId,
+        deletedAt: null,
+        ...(cursor
+          ? {
+              OR: [
+                { updatedAt: { lt: new Date(cursor.updatedAt) } },
+                { updatedAt: new Date(cursor.updatedAt), id: { lt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      include: {
+        notebook: { select: { id: true, title: true } },
+      },
+    });
+
+    return sources.map((s) => ({
+      id: s.id,
+      notebookId: s.notebookId,
+      notebookTitle: s.notebook.title,
+      workspaceId: s.workspaceId,
+      title: s.title,
+      type: s.type.toLowerCase() as SourceType,
+      url: s.url || undefined,
+      status: this.mapPrismaStatus(s.status),
+      indexingProgress: s.indexingProgress,
+      errorMessage: s.errorMessage || undefined,
+      updatedAt: s.updatedAt,
     }));
   }
 

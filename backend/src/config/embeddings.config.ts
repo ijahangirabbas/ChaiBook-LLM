@@ -2,24 +2,40 @@ import { OpenAIEmbeddings } from '@langchain/openai';
 import { Embeddings } from '@langchain/core/embeddings';
 import { config } from './env.config';
 
+const EMBED_BATCH_SIZE = 50;
+const EMBED_MAX_RETRIES = 3;
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function embedWithRetry<T>(fn: () => Promise<T>, attempt = 1): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const message = (err as Error).message || '';
+    const isRateLimit = message.includes('429') || message.toLowerCase().includes('rate');
+    if (isRateLimit && attempt < EMBED_MAX_RETRIES) {
+      const delay = Math.min(2000 * 2 ** (attempt - 1), 10_000);
+      await sleep(delay);
+      return embedWithRetry(fn, attempt + 1);
+    }
+    throw err;
+  }
+}
+
 export class JinaEmbeddings extends Embeddings {
   private apiKey: string;
   private modelName: string;
-  private fallback: LocalDeterministicEmbeddings;
 
   constructor(fields?: { apiKey?: string; modelName?: string }) {
     super({});
     this.apiKey = fields?.apiKey || process.env.JINA_API_KEY || process.env.JENA_API_KEY || '';
     this.modelName = fields?.modelName || process.env.JINA_EMBEDDING_MODEL || 'jina-embeddings-v5-text-small';
-    this.fallback = new LocalDeterministicEmbeddings();
   }
 
-  async embedDocuments(texts: string[]): Promise<number[][]> {
-    if (!this.apiKey) {
-      return this.fallback.embedDocuments(texts);
-    }
-
-    try {
+  private async embedBatch(texts: string[]): Promise<number[][]> {
+    return embedWithRetry(async () => {
       const response = await fetch('https://api.jina.ai/v1/embeddings', {
         method: 'POST',
         headers: {
@@ -34,16 +50,22 @@ export class JinaEmbeddings extends Embeddings {
 
       if (!response.ok) {
         const errText = await response.text();
-        console.warn(`⚠️ Jina API error (${response.status}): ${errText.substring(0, 100)}. Falling back to local embeddings.`);
-        return this.fallback.embedDocuments(texts);
+        throw new Error(`Jina embeddings API error (${response.status}): ${errText.substring(0, 200)}`);
       }
 
       const data = (await response.json()) as { data: Array<{ embedding: number[] }> };
       return data.data.map((item) => item.embedding);
-    } catch (err: any) {
-      console.warn(`⚠️ Jina embeddings request failed (${err.message}). Falling back to local embeddings.`);
-      return this.fallback.embedDocuments(texts);
+    });
+  }
+
+  async embedDocuments(texts: string[]): Promise<number[][]> {
+    const results: number[][] = [];
+    for (let i = 0; i < texts.length; i += EMBED_BATCH_SIZE) {
+      const batch = texts.slice(i, i + EMBED_BATCH_SIZE);
+      const embeddings = await this.embedBatch(batch);
+      results.push(...embeddings);
     }
+    return results;
   }
 
   async embedQuery(text: string): Promise<number[]> {
@@ -52,43 +74,17 @@ export class JinaEmbeddings extends Embeddings {
   }
 }
 
-export class LocalDeterministicEmbeddings extends Embeddings {
-  constructor() {
-    super({});
+export function getEmbeddingModelName(): string {
+  const jinaKey = process.env.JINA_API_KEY || process.env.JENA_API_KEY;
+  if (jinaKey) {
+    return process.env.JINA_EMBEDDING_MODEL || 'jina-embeddings-v5-text-small';
   }
-
-  async embedDocuments(texts: string[]): Promise<number[][]> {
-    return texts.map((t) => this.generateVector(t));
-  }
-
-  async embedQuery(text: string): Promise<number[]> {
-    return this.generateVector(text);
-  }
-
-  private generateVector(text: string, dimensions = 1536): number[] {
-    const vector = new Array(dimensions).fill(0);
-    const words = text.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
-
-    if (words.length === 0) return vector;
-
-    words.forEach((word) => {
-      let hash = 0;
-      for (let i = 0; i < word.length; i++) {
-        hash = (hash << 5) - hash + word.charCodeAt(i);
-        hash |= 0;
-      }
-      const idx = Math.abs(hash) % dimensions;
-      vector[idx] += 1;
-    });
-
-    const norm = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0)) || 1;
-    return vector.map((val) => val / norm);
-  }
+  return config.embeddingModel;
 }
 
 export function getEmbeddingsProvider(): Embeddings {
   const jinaKey = process.env.JINA_API_KEY || process.env.JENA_API_KEY;
-  const jinaModel = process.env.JINA_EMBEDDING_MODEL || 'jina-embeddings-v5-text-small';
+  const jinaModel = getEmbeddingModelName();
 
   if (jinaKey) {
     console.log(`⚡ Using Jina Embeddings API (${jinaModel})...`);
@@ -102,6 +98,7 @@ export function getEmbeddingsProvider(): Embeddings {
     });
   }
 
-  console.log('⚡ Using Local Deterministic Embeddings Engine (no API key required)...');
-  return new LocalDeterministicEmbeddings();
+  throw new Error(
+    'No embedding API configured. Set JINA_API_KEY or OPENAI_API_KEY to enable vector search and indexing.'
+  );
 }

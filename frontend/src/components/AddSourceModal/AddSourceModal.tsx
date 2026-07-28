@@ -12,7 +12,7 @@ type Step = 'select' | 'configure'
 import { ApiService } from '../../services/api.service'
 
 export function AddSourceModal() {
-  const { addSourceModalOpen, setAddSourceModalOpen, activeNotebookId, notebooks, addSource, addNotebook } = useAppStore()
+  const { addSourceModalOpen, setAddSourceModalOpen, activeNotebookId, notebooks, sources, addSource, addNotebook } = useAppStore()
   const [step, setStep] = useState<Step>('select')
   const [selectedType, setSelectedType] = useState<SourceType | null>(null)
 
@@ -26,6 +26,13 @@ export function AddSourceModal() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const currentNotebookId = activeNotebookId || notebooks[0]?.id
+
+  const nextSourceNumber = () => {
+    const notebookSources = currentNotebookId
+      ? sources.filter((s) => !s.notebookId || s.notebookId === currentNotebookId)
+      : sources
+    return notebookSources.length + 1
+  }
 
   const handleClose = () => {
     setAddSourceModalOpen(false)
@@ -80,9 +87,9 @@ export function AddSourceModal() {
           type: fileType,
           title: selectedFile.name,
           domain: selectedFile.name,
-          number: Math.floor(Math.random() * 10) + 1,
-          status: 'indexing',
-          indexingProgress: 25,
+          number: nextSourceNumber(),
+          status: res.status || 'indexing',
+          indexingProgress: 10,
         })
       } else if (urlInput.trim()) {
         const detectedType = ApiService.detectSourceType(undefined, urlInput.trim(), selectedType || undefined)
@@ -104,9 +111,9 @@ export function AddSourceModal() {
           title: urlInput.trim(),
           url: urlInput.trim(),
           domain: domainStr,
-          number: Math.floor(Math.random() * 10) + 1,
-          status: 'indexing',
-          indexingProgress: 25,
+          number: nextSourceNumber(),
+          status: res.status || 'indexing',
+          indexingProgress: 10,
         })
       } else if (textInput.trim()) {
         const titleSnippet = textInput.trim().slice(0, 30) + '...'
@@ -117,9 +124,9 @@ export function AddSourceModal() {
           type: 'text',
           title: titleSnippet,
           domain: 'Pasted Text',
-          number: Math.floor(Math.random() * 10) + 1,
-          status: 'indexing',
-          indexingProgress: 25,
+          number: nextSourceNumber(),
+          status: res.status || 'indexing',
+          indexingProgress: 10,
         })
       } else {
         throw new Error('Please select a file, enter a valid URL, or paste text before submitting.')

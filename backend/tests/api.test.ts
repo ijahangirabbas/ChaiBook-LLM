@@ -1,5 +1,6 @@
 process.env.NODE_ENV = 'test';
 process.env.SILENT_PRISMA = 'true';
+process.env.TEST_JWT_SECRET = process.env.TEST_JWT_SECRET || 'chaibook-test-jwt-secret';
 
 import jwt from 'jsonwebtoken';
 import app from '../src/app';
@@ -34,7 +35,6 @@ async function runApiTests() {
   }
 
   try {
-    // Test 1: Unauthenticated request should be rejected with 401
     const res1 = await fetch(`${baseUrl}/notebooks`);
     await assert(
       'Unauthenticated request returns 401 Unauthorized',
@@ -42,7 +42,6 @@ async function runApiTests() {
       `Received status ${res1.status}`
     );
 
-    // Test 2: Invalid Bearer token should return 401
     const res2 = await fetch(`${baseUrl}/notebooks`, {
       headers: { Authorization: 'Bearer invalid-token-string' },
     });
@@ -52,13 +51,11 @@ async function runApiTests() {
       `Received status ${res2.status}`
     );
 
-    // Generate valid test JWT token payload
     const testToken = jwt.sign(
       { sub: 'test-user-sub-123', email: 'test@chaibook.ai', name: 'Test User' },
-      process.env.SUPABASE_JWT_SECRET || 'test-secret'
+      process.env.TEST_JWT_SECRET!
     );
 
-    // Test 3: Authenticated request to GET /notebooks returns 200
     const res3 = await fetch(`${baseUrl}/notebooks`, {
       headers: { Authorization: `Bearer ${testToken}` },
     });
@@ -68,7 +65,6 @@ async function runApiTests() {
       `Received status ${res3.status}`
     );
 
-    // Test 4: Zod body validation on POST /notebooks with empty title returns 400
     const res4 = await fetch(`${baseUrl}/notebooks`, {
       method: 'POST',
       headers: {
@@ -83,7 +79,6 @@ async function runApiTests() {
       `Received status ${res4.status}`
     );
 
-    // Test 5: Fetching non-existent notebook ID returns 404
     const res5 = await fetch(`${baseUrl}/notebooks/non-existent-uuid-999`, {
       headers: { Authorization: `Bearer ${testToken}` },
     });

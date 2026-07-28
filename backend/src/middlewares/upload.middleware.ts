@@ -1,6 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { ALLOWED_EXTENSIONS } from '../utils/file-validation.utils';
 
 const uploadDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadDir)) {
@@ -19,8 +20,16 @@ const storage = multer.diskStorage({
 });
 
 export const uploadMiddleware = multer({
-  storage: storage,
+  storage,
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
+  },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      cb(new Error(`File type "${ext || 'unknown'}" is not supported.`));
+      return;
+    }
+    cb(null, true);
   },
 });

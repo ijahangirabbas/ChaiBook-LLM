@@ -15,18 +15,40 @@ export const updateNotebookSchema = z.object({
 });
 
 export const createSourceSchema = z.object({
-  type: z.enum(['youtube', 'pdf', 'webpage', 'text', 'markdown', 'word', 'powerpoint', 'srt', 'vtt']),
+  type: z.enum(['youtube', 'pdf', 'webpage', 'text', 'markdown', 'srt', 'vtt']),
   title: z.string().optional(),
   url: z.string().url('Invalid URL format').optional(),
-  content: z.string().optional(),
+  content: z.string().max(500_000, 'Content exceeds maximum size of 500KB').optional(),
+});
+
+export const uploadIntentSchema = z.object({
+  filename: z.string().min(1, 'Filename is required').max(255),
+  contentType: z.string().min(1).max(200).optional(),
+});
+
+export const createConversationSchema = z.object({
+  title: z.string().min(1).max(100).optional(),
 });
 
 export const chatStreamSchema = z.object({
-  message: z.string().min(1, 'Message cannot be empty'),
-  conversationId: z.string().min(1).optional(),
+  message: z.string().min(1, 'Message cannot be empty').max(10_000, 'Message is too long'),
+  conversationId: z.string().uuid('Invalid conversation ID').optional(),
+  regenerate: z.boolean().optional(),
 });
 
 export const paginationQuerySchema = z.object({
   page: z.string().optional().transform((val) => (val ? parseInt(val, 10) : 1)),
   limit: z.string().optional().transform((val) => (val ? Math.min(parseInt(val, 10), 100) : 20)),
+});
+
+export const cursorPaginationQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z
+    .string()
+    .optional()
+    .transform((val) => {
+      const parsed = val ? parseInt(val, 10) : 20;
+      if (Number.isNaN(parsed) || parsed < 1) return 20;
+      return Math.min(parsed, 100);
+    }),
 });

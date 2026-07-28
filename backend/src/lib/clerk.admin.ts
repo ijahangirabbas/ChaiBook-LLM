@@ -1,3 +1,1 @@
-import { config } from '../config/env.config';
-
-export const isClerkConfigured = Boolean(config.clerkSecretKey);
+export { isClerkConfigured, verifyBearerToken } from './clerk.auth';

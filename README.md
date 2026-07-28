@@ -10,7 +10,7 @@
 - **Backend API**: Express.js REST API with LangChain.js, TypeScript, and Server-Sent Events (SSE) token streaming.
 - **Database & Persistence**: PostgreSQL managed via **Prisma ORM** (`User`, `Workspace`, `Membership`, `Notebook`, `Source`, `Conversation`, `Message`, `Generation`, `MessageCitation`, `IngestionJob`).
 - **Vector Database**: **Qdrant Vector Database** with `workspace_id` and `notebook_id` payload filters for tenant isolation.
-- **Authentication**: **Supabase Auth** (OAuth with Google & GitHub) with cryptographic JWT verification on Express API routes.
+- **Authentication**: **Clerk** (OAuth with Google & GitHub) with JWT bearer tokens on Express API routes.
 - **Resilient UI & State Hydration**: Skeletons for async loads, retry error banners, persistent localStorage state across page refreshes, and graceful 404 page handling.
 
 ---
@@ -26,14 +26,14 @@
 | **AI Framework** | LangChain.js (`@langchain/openai`, `@langchain/core`) |
 | **Database & ORM** | PostgreSQL, Prisma ORM |
 | **Vector Search** | Qdrant (`@qdrant/js-client-rest`) |
-| **Authentication** | Supabase Auth (`@supabase/supabase-js`, `jsonwebtoken`) |
+| **Authentication** | Clerk (`@clerk/clerk-react`), `jsonwebtoken` on API |
 | **Ingestion Loaders** | PDF (`pdf-parse`), Web (`cheerio`), YouTube (`youtube-transcript`), Subtitles (`srt`/`vtt`) |
 
 ---
 
 ## 🔐 Multi-Tenant Security & Tenant Isolation
 
-1. **Cryptographic JWT Verification**: Express middleware (`auth.middleware.ts`) verifies incoming Supabase JWT tokens (`sub` claim) and auto-provisions user & workspace context on the request object (`req.user = { id, email, workspaceId }`).
+1. **Clerk JWT Verification**: Express middleware validates Clerk session tokens cryptographically via `@clerk/backend` (`verifyToken`), then provisions user & workspace context on `req.user`.
 2. **Workspace-Scoped Database Queries**: All Prisma repository operations on `Notebooks`, `Sources`, and `Conversations` enforce strict filtering by `workspaceId`.
 3. **Qdrant Filter Enforcement**: Vector similarity search applies compound filters (`metadata.workspace_id` AND `metadata.notebook_id`) to ensure cross-tenant data leakage is cryptographically impossible.
 4. **Auto-Upsert Safety**: Ingestion status initialization automatically verifies that the parent `Workspace` and `Notebook` exist in PostgreSQL before inserting `Source` entries, eliminating foreign key constraint failures.
@@ -42,7 +42,7 @@
 
 ## 🗄️ Database Model Overview (`schema.prisma`)
 
-- `User`: Stores user identity, email, avatar, and Supabase subject (`supabaseSubject`).
+- `User`: Stores user identity, email, avatar, and Clerk auth subject (`authSubject`, mapped from legacy `supabaseSubject` column).
 - `Workspace`: Tenant container owning notebooks, sources, and conversations.
 - `Membership`: Maps users to workspaces with roles (`OWNER`, `MEMBER`).
 - `Notebook`: Topic workspace owning sources and chat conversations (`workspaceId`, `userId`, `deletedAt`).
@@ -58,9 +58,12 @@
 ### Prerequisites
 
 - **Node.js**: v18.0.0 or higher
-- **PostgreSQL**: Running PostgreSQL server (or Supabase Postgres)
+- **PostgreSQL**: Running PostgreSQL server (or Neon)
 - **Qdrant**: Local Qdrant instance (`http://localhost:6333`) or Qdrant Cloud
-- **OpenAI API Key**: Valid key for embeddings (`text-embedding-3-small`) and chat (`gpt-4o`)
+- **Redis**: For BullMQ ingestion queue
+- **Clerk**: Project with Google/GitHub OAuth enabled
+- **OpenAI API Key**: Valid key for chat (`gpt-4o`) and/or embeddings
+- **Jina API Key** (optional): Preferred embedding provider when set
 
 ---
 
@@ -76,12 +79,21 @@ NODE_ENV=development
 
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/chaibook_db?schema=public"
 
+CLERK_SECRET_KEY="sk_test_your-clerk-secret-key"
+CLERK_PUBLISHABLE_KEY="pk_test_your-clerk-publishable-key"
+
 OPENAI_API_KEY="your-openai-api-key"
+JINA_API_KEY=""  # optional; used for embeddings when set
+
 QDRANT_URL="http://localhost:6333"
 QDRANT_COLLECTION_NAME="chaibook_sources"
 
-SUPABASE_JWT_SECRET="your-supabase-jwt-secret"
+REDIS_URL="redis://localhost:6379"
 CORS_ORIGINS="http://localhost:5173"
+
+AWS_ACCESS_KEY_ID=""
+AWS_SECRET_ACCESS_KEY=""
+AWS_S3_BUCKET_NAME="chaibook-sources"
 ```
 
 #### 2. Frontend Environment (`frontend/.env`)
@@ -90,8 +102,7 @@ Create a `frontend/.env` file:
 
 ```env
 VITE_API_URL="http://localhost:3001/api/v1"
-VITE_SUPABASE_URL="https://your-supabase-project.supabase.co"
-VITE_SUPABASE_ANON_KEY="your-supabase-anon-key"
+VITE_CLERK_PUBLISHABLE_KEY="pk_test_your-clerk-publishable-key"
 ```
 
 ---

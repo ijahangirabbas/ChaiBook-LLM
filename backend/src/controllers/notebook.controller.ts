@@ -3,9 +3,12 @@ import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import { notebookRepository } from '../repositories/notebook.repository';
 import { sourceRepository } from '../repositories/source.repository';
 import { createNotebookSchema, updateNotebookSchema, paginationQuerySchema } from '../validators';
+import { enqueueIngestionJob } from '../queue/ingestion.queue';
+import { prisma } from '../db/prisma.client';
+import { SourceType } from '../types/source.types';
+import { sendError, sendSuccess } from '../utils/http-response.utils';
 
 export class NotebookController {
-  // GET /api/v1/notebooks
   async getNotebooks(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const workspaceId = req.user?.workspaceId || 'default';
@@ -13,17 +16,16 @@ export class NotebookController {
 
       const result = await notebookRepository.getNotebooks(workspaceId, page, limit);
 
-      res.status(200).json({
-        success: true,
-        data: result.data,
-        pagination: result.pagination,
+      sendSuccess(res, result.data, 200, {
+        nextCursor: null,
+        hasMore: result.pagination.page < result.pagination.totalPages,
+        limit,
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // GET /api/v1/notebooks/:id
   async getNotebookById(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
@@ -31,29 +33,17 @@ export class NotebookController {
       const notebook = await notebookRepository.getNotebookById(id, workspaceId);
 
       if (!notebook) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Notebook with ID "${id}" not found.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Notebook with ID "${id}" not found.`);
         return;
       }
 
       const sources = await sourceRepository.getSourcesForNotebook(id, workspaceId);
-
-      res.status(200).json({
-        success: true,
-        data: {
-          ...notebook,
-          sources,
-        },
-      });
+      sendSuccess(res, { ...notebook, sources });
     } catch (error) {
       next(error);
     }
   }
 
-  // POST /api/v1/notebooks
   async createNotebook(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const validated = createNotebookSchema.parse(req.body);
@@ -66,16 +56,12 @@ export class NotebookController {
         userId,
       });
 
-      res.status(201).json({
-        success: true,
-        data: newNotebook,
-      });
+      sendSuccess(res, newNotebook, 201);
     } catch (error) {
       next(error);
     }
   }
 
-  // PATCH /api/v1/notebooks/:id
   async updateNotebook(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
@@ -85,24 +71,16 @@ export class NotebookController {
       const updated = await notebookRepository.updateNotebook(id, workspaceId, validated);
 
       if (!updated) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Notebook with ID "${id}" not found.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Notebook with ID "${id}" not found.`);
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        data: updated,
-      });
+      sendSuccess(res, updated);
     } catch (error) {
       next(error);
     }
   }
 
-  // POST /api/v1/notebooks/:id/duplicate
   async duplicateNotebook(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
@@ -111,24 +89,33 @@ export class NotebookController {
 
       const duplicated = await notebookRepository.duplicateNotebook(id, workspaceId, userId);
       if (!duplicated) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Notebook with ID "${id}" not found.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Notebook with ID "${id}" not found.`);
         return;
       }
 
-      res.status(201).json({
-        success: true,
-        data: duplicated,
+      const duplicatedSources = await prisma.source.findMany({
+        where: { notebookId: duplicated.id, workspaceId, deletedAt: null },
       });
+
+      for (const source of duplicatedSources) {
+        await enqueueIngestionJob({
+          sourceId: source.id,
+          notebookId: duplicated.id,
+          workspaceId,
+          sourceType: source.type.toLowerCase() as SourceType,
+          title: source.title,
+          url: source.url || undefined,
+          s3Key: source.s3Key || undefined,
+          rawContent: source.rawContent || undefined,
+        });
+      }
+
+      sendSuccess(res, duplicated, 201);
     } catch (error) {
       next(error);
     }
   }
 
-  // PATCH /api/v1/notebooks/:id/favorite
   async favoriteNotebook(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
@@ -136,24 +123,16 @@ export class NotebookController {
 
       const success = await notebookRepository.toggleFavorite(id, workspaceId);
       if (!success) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Notebook with ID "${id}" not found.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Notebook with ID "${id}" not found.`);
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        message: 'Notebook favorite status toggled.',
-      });
+      sendSuccess(res, { message: 'Notebook favorite status toggled.' });
     } catch (error) {
       next(error);
     }
   }
 
-  // PATCH /api/v1/notebooks/:id/archive
   async archiveNotebook(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
@@ -161,24 +140,16 @@ export class NotebookController {
 
       const success = await notebookRepository.toggleArchive(id, workspaceId);
       if (!success) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Notebook with ID "${id}" not found.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Notebook with ID "${id}" not found.`);
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        message: 'Notebook archive status toggled.',
-      });
+      sendSuccess(res, { message: 'Notebook archive status toggled.' });
     } catch (error) {
       next(error);
     }
   }
 
-  // DELETE /api/v1/notebooks/:id
   async deleteNotebook(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
@@ -186,46 +157,29 @@ export class NotebookController {
       const deleted = await notebookRepository.deleteNotebook(id, workspaceId);
 
       if (!deleted) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Notebook with ID "${id}" not found or already deleted.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Notebook with ID "${id}" not found or already deleted.`);
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        message: `Notebook "${id}" deleted successfully.`,
-      });
+      sendSuccess(res, { message: `Notebook "${id}" deleted successfully.` });
     } catch (error) {
       next(error);
     }
   }
 
-  // GET /api/v1/notebooks/:id/sources
   async getNotebookSources(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
       const workspaceId = req.user?.workspaceId || 'default';
 
-      // Verify notebook ownership
       const notebook = await notebookRepository.getNotebookById(id, workspaceId);
       if (!notebook) {
-        res.status(404).json({
-          success: false,
-          code: 'NOT_FOUND',
-          message: `Notebook with ID "${id}" not found.`,
-        });
+        sendError(res, 404, 'NOT_FOUND', `Notebook with ID "${id}" not found.`);
         return;
       }
 
       const sources = await sourceRepository.getSourcesForNotebook(id, workspaceId);
-
-      res.status(200).json({
-        success: true,
-        data: sources,
-      });
+      sendSuccess(res, sources);
     } catch (error) {
       next(error);
     }

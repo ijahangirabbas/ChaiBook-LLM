@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from '../../components/Sidebar/Sidebar'
 import { AddSourceModal } from '../../components/AddSourceModal/AddSourceModal'
@@ -12,8 +13,21 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ sidebarMode: explicitSidebarMode }: AppLayoutProps) {
-  const { sidebarOpen } = useAppStore()
+  const { sidebarOpen, sources, pollPendingSources } = useAppStore()
   const location = useLocation()
+
+  useEffect(() => {
+    const hasPending = sources.some(
+      (s) => s.status === 'indexing' || s.status === 'uploading' || (s.indexingProgress ?? 0) < 100
+    )
+    if (!hasPending) return
+
+    const interval = setInterval(() => {
+      void pollPendingSources()
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [sources, pollPendingSources])
 
   // Auto-detect notebook sidebar mode for chat and notebook routes
   const isNotebookRoute = location.pathname.startsWith('/chat') || location.pathname.startsWith('/notebook')

@@ -1,6 +1,15 @@
 import { Document } from '@langchain/core/documents';
 import { VectorFactory } from '../vectorstore/vector.factory';
 import { VectorSearchResult } from '../vectorstore/base.vectorstore';
+import {
+  applyMMR,
+  filterByMinScore,
+  rerankByKeywordOverlap,
+} from '../utils/retrieval.utils';
+import { rerankWithJina } from './rerank.service';
+
+const RETRIEVE_CANDIDATES = 20;
+const FINAL_TOP_K = 5;
 
 export class VectorService {
   private vectorStore = VectorFactory.getVectorStore();
@@ -12,10 +21,26 @@ export class VectorService {
   async searchWorkspace(
     query: string,
     notebookId: string,
-    limit = 5,
+    limit = FINAL_TOP_K,
     workspaceId?: string
   ): Promise<VectorSearchResult[]> {
-    return await this.vectorStore.similaritySearch(query, notebookId, limit, workspaceId);
+    const candidates = await this.vectorStore.similaritySearch(
+      query,
+      notebookId,
+      RETRIEVE_CANDIDATES,
+      workspaceId
+    );
+
+    const aboveThreshold = filterByMinScore(candidates);
+
+    // Prefer Jina cross-encoder rerank when API key is available; fall back to keyword+MMR
+    const jinaReranked = await rerankWithJina(query, aboveThreshold, Math.max(limit * 2, 10));
+    if (jinaReranked && jinaReranked.length > 0) {
+      return applyMMR(jinaReranked, limit);
+    }
+
+    const reranked = rerankByKeywordOverlap(query, aboveThreshold);
+    return applyMMR(reranked, limit);
   }
 
   async deleteSourceVectors(sourceId: string): Promise<void> {

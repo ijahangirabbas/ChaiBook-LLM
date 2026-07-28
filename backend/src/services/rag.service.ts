@@ -1,15 +1,17 @@
 import { Response } from 'express';
 import { ChatOpenAI } from '@langchain/openai';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
-import { Document } from '@langchain/core/documents';
 import { vectorService } from './vector.service';
 import { config } from '../config/env.config';
 import { RAG_SYSTEM_PROMPT } from '../constants/rag.constants';
 import { CitedSource } from '../types/chat.types';
 import { sendSSEEvent } from '../utils/sse.utils';
-import { prisma } from '../db/prisma.client';
-import { MessageRole } from '@prisma/client';
 import { conversationRepository } from '../repositories/conversation.repository';
+import { recordTokenUsage } from './workspace-quota.service';
+
+function emptyTokenStats() {
+  return { totalTokens: 0, promptTokens: 0, completionTokens: 0 };
+}
 
 export class RagService {
   async streamRAGResponse(
@@ -18,105 +20,56 @@ export class RagService {
     res: Response,
     workspaceId = 'default',
     conversationId?: string
-  ): Promise<void> {
+  ): Promise<{ totalTokens: number; promptTokens: number; completionTokens: number }> {
     const startTime = Date.now();
     let fullResponseText = '';
 
     try {
-      // Step 1: Ensure or create Conversation record in DB
-      let activeConversationId = conversationId;
-      try {
-        if (!activeConversationId) {
-          const conv = await prisma.conversation.create({
-            data: {
-              workspaceId,
-              notebookId,
-              title: query.slice(0, 40) || 'New Conversation',
-            },
-          });
-          activeConversationId = conv.id;
-        }
+      const activeConversationId = conversationId;
 
-        // Persist User Message
-        await prisma.message.create({
-          data: {
-            conversationId: activeConversationId,
-            role: MessageRole.USER,
-            content: query,
-          },
-        });
-      } catch {
-        // DB fallback if offline
+      if (!activeConversationId) {
+        sendSSEEvent(res, { type: 'failed', error: 'Missing conversation ID for chat stream.' });
+        sendSSEEvent(res, { type: 'error', message: 'Missing conversation ID for chat stream.' });
+        return emptyTokenStats();
       }
 
       sendSSEEvent(res, { type: 'message.started', conversationId: activeConversationId });
 
-      // Step 2: Retrieve matching vector chunks strictly scoped to active notebook
-      let searchResults = await vectorService.searchWorkspace(query, notebookId, 5, workspaceId);
-
-      // Secondary fallback: check database for active sources in this notebook if vector search returned 0
-      if (searchResults.length === 0) {
-        try {
-          const dbSources = await prisma.source.findMany({
-            where: { notebookId, deletedAt: null },
-            take: 5,
-          });
-          if (dbSources.length > 0) {
-            searchResults = dbSources.map((s, idx) => ({
-              document: new Document({
-                pageContent: `Source Title: ${s.title}\nSource Type: ${s.type}\nURL: ${s.url || 'N/A'}\nStatus: ${s.status}`,
-                metadata: {
-                  source_id: s.id,
-                  source_type: s.type.toLowerCase(),
-                  title: s.title,
-                  url: s.url || undefined,
-                  notebook_id: notebookId,
-                  workspace_id: workspaceId,
-                },
-              }),
-              score: 0.8 - idx * 0.1,
-            }));
-          }
-        } catch {
-          // ignore DB fallback errors
-        }
-      }
+      const searchResults = await vectorService.searchWorkspace(query, notebookId, 5, workspaceId);
 
       if (searchResults.length === 0) {
-        const fallbackText = 'No indexed sources were found for this notebook yet. Please click "+ Add Source" to upload a PDF, web page link, YouTube video, or text file.';
+        const fallbackText =
+          'No indexed sources were found for this notebook yet. Please click "+ Add Source" to upload a PDF, web page link, YouTube video, or text file.';
         sendSSEEvent(res, { type: 'token.delta', text: fallbackText });
         sendSSEEvent(res, { type: 'citations', sources: [] });
         sendSSEEvent(res, { type: 'completed' });
         sendSSEEvent(res, { type: 'done' });
 
         try {
-          if (activeConversationId) {
-            await prisma.message.create({
-              data: {
-                conversationId: activeConversationId,
-                role: MessageRole.ASSISTANT,
-                content: fallbackText,
-              },
-            });
-          }
+          await conversationRepository.addMessage({
+            conversationId: activeConversationId,
+            role: 'assistant',
+            content: fallbackText,
+          });
         } catch {
           // Ignore DB save errors
         }
-        return;
+        return emptyTokenStats();
       }
 
-      // Step 3: Format context text with explicit index tags
       let formattedContext = '';
       const citedSources: CitedSource[] = [];
 
-      searchResults.forEach((res, index) => {
+      searchResults.forEach((result, index) => {
         const citationNum = index + 1;
-        const meta = res.document.metadata;
+        const meta = result.document.metadata;
+        const chunkId = String(meta.chunk_id || '');
 
-        formattedContext += `--- SOURCE [${citationNum}] ---\nTitle: ${meta.title || 'Untitled'}\nType: ${meta.source_type || 'Unknown'}\nContent: ${res.document.pageContent}\n\n`;
+        formattedContext += `<source id="${citationNum}" chunk_id="${chunkId}" trusted="false">\nTitle: ${meta.title || 'Untitled'}\nType: ${meta.source_type || 'Unknown'}\nContent: ${result.document.pageContent}\n</source>\n\n`;
 
         citedSources.push({
           citationNumber: citationNum,
+          chunk_id: chunkId || undefined,
           source_id: meta.source_id || '',
           source_type: meta.source_type || 'text',
           title: meta.title || 'Untitled Source',
@@ -127,14 +80,19 @@ export class RagService {
           startSeconds: meta.startSeconds,
           timelineSegment: meta.timelineSegment,
           charOffset: meta.charOffset,
-          retrievedChunk: res.document.pageContent,
-          similarity: parseFloat(res.score.toFixed(4)),
+          retrievedChunk: result.document.pageContent,
+          similarity: parseFloat(result.score.toFixed(4)),
         });
       });
 
-      // Step 4: Build Prompt Template & Stream Tokens with System and Human messages
       const userPrompt = `<context>\n${formattedContext}</context>\n\nQuestion: ${query}`;
-      const approxPromptTokens = Math.round((RAG_SYSTEM_PROMPT.length + userPrompt.length) / 4);
+      const promptTokens = Math.round((RAG_SYSTEM_PROMPT.length + userPrompt.length) / 4);
+
+      let clientDisconnected = false;
+      const onClose = () => {
+        clientDisconnected = true;
+      };
+      res.on('close', onClose);
 
       if (!config.openaiApiKey) {
         fullResponseText = `[OPENAI_API_KEY not configured] Here is the retrieved context from your notebook sources:\n\n${searchResults.map((r, i) => `[${i + 1}] ${r.document.pageContent}`).join('\n\n')}`;
@@ -148,14 +106,13 @@ export class RagService {
             streaming: true,
           });
 
-          const messages = [
+          const stream = await llm.stream([
             new SystemMessage(RAG_SYSTEM_PROMPT),
             new HumanMessage(userPrompt),
-          ];
-
-          const stream = await llm.stream(messages);
+          ]);
 
           for await (const chunk of stream) {
+            if (clientDisconnected) break;
             const textToken = typeof chunk.content === 'string' ? chunk.content : String(chunk.content || '');
             if (textToken) {
               fullResponseText += textToken;
@@ -163,55 +120,72 @@ export class RagService {
             }
           }
         } catch (llmErr: any) {
-          console.warn(`⚠️ OpenAI streaming error (${llmErr?.message || llmErr}). Synthesizing response from retrieved chunks.`);
+          if (clientDisconnected) {
+            res.off('close', onClose);
+            return emptyTokenStats();
+          }
+          console.warn(
+            `⚠️ OpenAI streaming error (${llmErr?.message || llmErr}). Synthesizing response from retrieved chunks.`
+          );
           fullResponseText = `Based on your knowledge base sources:\n\n${searchResults.map((r, i) => `[${i + 1}] ${r.document.pageContent}`).join('\n\n')}`;
           sendSSEEvent(res, { type: 'token.delta', text: fullResponseText });
         }
       }
 
-      // Step 5: Emit Citations
+      if (clientDisconnected) {
+        res.off('close', onClose);
+        return emptyTokenStats();
+      }
+
+      const completionTokens = Math.round(fullResponseText.length / 4);
+      const totalTokens = promptTokens + completionTokens;
+
       sendSSEEvent(res, { type: 'citations', sources: citedSources });
 
-      // Step 6: Persist Assistant Message, Citations, & Generation stats in DB
       try {
-        if (activeConversationId) {
-          const assistantMsg = await conversationRepository.addMessage({
-            conversationId: activeConversationId,
-            role: 'assistant',
-            content: fullResponseText,
-            sources: citedSources,
-          });
+        const assistantMsg = await conversationRepository.addMessage({
+          conversationId: activeConversationId,
+          role: 'assistant',
+          content: fullResponseText,
+          sources: citedSources,
+        });
 
-          await conversationRepository.saveCitationsForMessage(
-            assistantMsg.id,
-            citedSources.map((c) => ({
-              sourceId: c.source_id,
-              title: c.title,
-              snippet: c.retrievedChunk,
-              page: c.pageNumber,
-              score: c.similarity,
-            }))
-          );
+        await conversationRepository.saveCitationsForMessage(
+          assistantMsg.id,
+          citedSources.map((c) => ({
+            sourceId: c.source_id,
+            chunkId: c.chunk_id,
+            title: c.title,
+            snippet: c.retrievedChunk,
+            page: c.pageNumber,
+            score: c.similarity,
+          }))
+        );
 
-          await conversationRepository.saveGenerationStats({
-            messageId: assistantMsg.id,
-            model: config.chatModel,
-            promptTokens: approxPromptTokens,
-            completionTokens: Math.round(fullResponseText.length / 4),
-            latencyMs: Date.now() - startTime,
-          });
-        }
+        await conversationRepository.saveGenerationStats({
+          messageId: assistantMsg.id,
+          model: config.chatModel,
+          promptTokens,
+          completionTokens,
+          latencyMs: Date.now() - startTime,
+        });
       } catch {
         // Ignore DB save errors
       }
 
+      await recordTokenUsage(workspaceId, totalTokens);
+
       sendSSEEvent(res, { type: 'completed', conversationId: activeConversationId });
       sendSSEEvent(res, { type: 'done' });
+      res.off('close', onClose);
+
+      return { totalTokens, promptTokens, completionTokens };
     } catch (error) {
       const errMsg = (error as Error).message || 'An error occurred during RAG generation.';
       console.error('❌ Error in RagService:', errMsg);
       sendSSEEvent(res, { type: 'failed', error: errMsg });
       sendSSEEvent(res, { type: 'error', message: errMsg });
+      return emptyTokenStats();
     }
   }
 }

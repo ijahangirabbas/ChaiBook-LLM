@@ -2,65 +2,82 @@ import { prisma } from '../db/prisma.client';
 import { MessageRole } from '@prisma/client';
 
 export class ConversationRepository {
-  async getOrCreateConversation(notebookId: string, workspaceId: string, title?: string) {
-    // Ensure parent workspace exists
-    const ws = await prisma.workspace.upsert({
-      where: { id: workspaceId },
-      create: {
-        id: workspaceId,
-        name: 'Personal Workspace',
-        slug: `ws-${workspaceId}`,
-      },
-      update: {},
+  async getConversation(conversationId: string, notebookId: string, workspaceId: string) {
+    return prisma.conversation.findFirst({
+      where: { id: conversationId, notebookId, workspaceId },
     });
-
-    // Ensure parent notebook exists
-    await prisma.notebook.upsert({
-      where: { id: notebookId },
-      create: {
-        id: notebookId,
-        workspaceId: ws.id,
-        title: 'Active Research Notebook',
-        userId: 'system',
-      },
-      update: {},
-    });
-
-    let conversation = await prisma.conversation.findFirst({
-      where: { notebookId, workspaceId: ws.id },
-      orderBy: { updatedAt: 'desc' },
-      include: {
-        messages: {
-          orderBy: { createdAt: 'asc' },
-          include: { citations: true },
-        },
-      },
-    });
-
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          notebookId,
-          workspaceId: ws.id,
-          title: title || 'Chat Overview',
-        },
-        include: {
-          messages: {
-            orderBy: { createdAt: 'asc' },
-            include: { citations: true },
-          },
-        },
-      });
-    }
-
-    return conversation;
   }
 
-  async getConversationsForNotebook(notebookId: string, workspaceId: string) {
-    return prisma.conversation.findMany({
-      where: { notebookId, workspaceId },
-      orderBy: { updatedAt: 'desc' },
+  async getConversationById(conversationId: string, workspaceId: string) {
+    return prisma.conversation.findFirst({
+      where: { id: conversationId, workspaceId },
+    });
+  }
+
+  async createConversation(notebookId: string, workspaceId: string, title?: string) {
+    return prisma.conversation.create({
+      data: {
+        notebookId,
+        workspaceId,
+        title: title || 'New Conversation',
+      },
+    });
+  }
+
+  async getConversationsForNotebook(
+    notebookId: string,
+    workspaceId: string,
+    options?: { cursor?: string | null; limit?: number }
+  ) {
+    const limit = options?.limit ?? 20;
+    const cursor = options?.cursor ? JSON.parse(Buffer.from(options.cursor, 'base64url').toString('utf8')) as { updatedAt: string; id: string } : null;
+
+    const rows = await prisma.conversation.findMany({
+      where: {
+        notebookId,
+        workspaceId,
+        ...(cursor
+          ? {
+              OR: [
+                { updatedAt: { lt: new Date(cursor.updatedAt) } },
+                { updatedAt: new Date(cursor.updatedAt), id: { lt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
       include: {
+        _count: { select: { messages: true } },
+      },
+    });
+
+    return rows;
+  }
+
+  async getConversationsForWorkspace(
+    workspaceId: string,
+    options?: { cursor?: string | null; limit?: number }
+  ) {
+    const limit = options?.limit ?? 20;
+    const cursor = options?.cursor ? JSON.parse(Buffer.from(options.cursor, 'base64url').toString('utf8')) as { updatedAt: string; id: string } : null;
+
+    return prisma.conversation.findMany({
+      where: {
+        workspaceId,
+        ...(cursor
+          ? {
+              OR: [
+                { updatedAt: { lt: new Date(cursor.updatedAt) } },
+                { updatedAt: new Date(cursor.updatedAt), id: { lt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      include: {
+        notebook: { select: { id: true, title: true } },
         _count: { select: { messages: true } },
       },
     });
@@ -149,16 +166,36 @@ export class ConversationRepository {
     });
   }
 
-  async getMessages(conversationId: string, workspaceId: string) {
+  async getMessages(
+    conversationId: string,
+    workspaceId: string,
+    options?: { cursor?: string | null; limit?: number }
+  ) {
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, workspaceId },
     });
 
     if (!conversation) return [];
 
+    const limit = options?.limit ?? 50;
+    const cursor = options?.cursor
+      ? (JSON.parse(Buffer.from(options.cursor, 'base64url').toString('utf8')) as { updatedAt: string; id: string })
+      : null;
+
     return prisma.message.findMany({
-      where: { conversationId },
-      orderBy: { createdAt: 'asc' },
+      where: {
+        conversationId,
+        ...(cursor
+          ? {
+              OR: [
+                { createdAt: { gt: new Date(cursor.updatedAt) } },
+                { createdAt: new Date(cursor.updatedAt), id: { gt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: limit + 1,
       include: {
         citations: true,
         generations: true,

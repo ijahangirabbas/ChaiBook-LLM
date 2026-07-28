@@ -20,6 +20,7 @@ out/
 .env.test
 .env.production
 !.env.example
+.mcp.json
 *.pem
 *.key
 *.cert

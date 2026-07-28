@@ -1,18 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
+import { AppError } from '../errors/app.error';
+import { sendError } from '../utils/http-response.utils';
 
-export function errorHandler(
-  err: Error,
-  _req: Request,
-  res: Response,
-  _next: NextFunction
-): void {
+export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction): void {
+  if (err instanceof AppError) {
+    sendError(res, err.statusCode, err.code, err.message, err.details);
+    return;
+  }
+
   if (err instanceof ZodError) {
-    res.status(400).json({
-      success: false,
-      code: 'VALIDATION_ERROR',
-      message: 'Invalid request parameters or payload format.',
-      errors: err.errors.map((e) => ({
+    sendError(res, 400, 'VALIDATION_ERROR', 'Invalid request parameters or payload format.', {
+      fields: err.errors.map((e) => ({
         path: e.path.join('.'),
         message: e.message,
       })),
@@ -21,9 +20,5 @@ export function errorHandler(
   }
 
   console.error('💥 Express Global Error Handler:', err);
-  res.status(500).json({
-    success: false,
-    code: 'INTERNAL_SERVER_ERROR',
-    message: err.message || 'Internal Server Error',
-  });
+  sendError(res, 500, 'INTERNAL_SERVER_ERROR', err.message || 'Internal Server Error');
 }
