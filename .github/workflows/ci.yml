@@ -10,6 +10,12 @@ jobs:
   verify-backend:
     name: Verify Backend API & Repositories
     runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      OPENAI_API_KEY: sk-proj-test-placeholder-key-for-ci
+      CLERK_SECRET_KEY: sk_test_placeholder_key_for_ci
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chaibook_test
+      REDIS_URL: redis://localhost:6379
 
     steps:
       - name: Checkout Codebase

@@ -108,6 +108,7 @@ export class RagService {
             temperature: 0.2,
             streaming: true,
             streamUsage: true,
+            ...(config.openaiBaseUrl ? { configuration: { baseURL: config.openaiBaseUrl } } : {}),
           });
 
           const stream = await llm.stream([

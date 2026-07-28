@@ -20,7 +20,6 @@ export function ChatPage() {
     notebooks,
     loadingNotebooks,
     sources,
-    messages: storeMessages,
     addMessage,
     updateMessage,
     removeMessage,

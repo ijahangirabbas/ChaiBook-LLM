@@ -5,7 +5,6 @@ import { useClerk, useUser } from '@clerk/clerk-react'
 import { useNavigate } from 'react-router-dom'
 import { Header } from '../../../components/Header/Header'
 import { useAppStore } from '../../../store/useAppStore'
-import { cn } from '../../../lib/utils'
 
 export function ProfilePage() {
   const navigate = useNavigate()
