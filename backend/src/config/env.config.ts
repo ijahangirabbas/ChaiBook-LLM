@@ -18,6 +18,7 @@ const envSchema = z.object({
   CLERK_PUBLISHABLE_KEY: z.string().optional().default(''),
   TEST_JWT_SECRET: z.string().optional().default(''),
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
+  FRONTEND_URL: z.string().optional().default(''),
   AWS_ACCESS_KEY_ID: z.string().optional().default(''),
   AWS_SECRET_ACCESS_KEY: z.string().optional().default(''),
   AWS_REGION: z.string().default('us-east-1'),
@@ -38,6 +39,20 @@ if (!parsedEnv.success) {
 
 const env = parsedEnv.data;
 
+function buildCorsOrigins(corsOrigins: string, frontendUrl: string): string[] {
+  const origins = corsOrigins
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
+  const normalizedFrontend = frontendUrl.trim().replace(/\/+$/, '');
+  if (normalizedFrontend && !origins.includes(normalizedFrontend)) {
+    origins.push(normalizedFrontend);
+  }
+
+  return origins;
+}
+
 export const config = {
   port: env.PORT,
   nodeEnv: env.NODE_ENV,
@@ -52,7 +67,7 @@ export const config = {
   clerkSecretKey: env.CLERK_SECRET_KEY,
   clerkPublishableKey: env.CLERK_PUBLISHABLE_KEY,
   testJwtSecret: env.TEST_JWT_SECRET,
-  corsOrigins: env.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean),
+  corsOrigins: buildCorsOrigins(env.CORS_ORIGINS, env.FRONTEND_URL),
   awsAccessKeyId: env.AWS_ACCESS_KEY_ID,
   awsSecretAccessKey: env.AWS_SECRET_ACCESS_KEY,
   awsRegion: env.AWS_REGION,
@@ -76,16 +91,23 @@ function assertProductionConfig(): void {
   }
   if (!config.redisUrl) missing.push('REDIS_URL');
   if (!config.clerkSecretKey) missing.push('CLERK_SECRET_KEY');
-  if (config.corsOrigins.length === 0 || config.corsOrigins.includes('*')) {
-    missing.push('CORS_ORIGINS (explicit production domain(s), no wildcard)');
+
+  const servesHttpApi = config.processRole === 'api' || config.processRole === 'all';
+  if (servesHttpApi) {
+    if (config.corsOrigins.length === 0 || config.corsOrigins.includes('*')) {
+      missing.push('CORS_ORIGINS (explicit production domain(s), no wildcard)');
+    }
+    const onlyLocalhostOrigins = config.corsOrigins.every(
+      (origin) =>
+        origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')
+    );
+    if (onlyLocalhostOrigins) {
+      missing.push(
+        'CORS_ORIGINS or FRONTEND_URL (set e.g. CORS_ORIGINS=https://your-frontend.com,http://localhost:5173)'
+      );
+    }
   }
-  const onlyLocalhostOrigins = config.corsOrigins.every(
-    (origin) =>
-      origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')
-  );
-  if (onlyLocalhostOrigins) {
-    missing.push('CORS_ORIGINS (must include your production frontend URL, not only localhost)');
-  }
+
   if (!config.awsAccessKeyId || !config.awsSecretAccessKey) {
     missing.push('AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY');
   }

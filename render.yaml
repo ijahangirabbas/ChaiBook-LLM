@@ -32,6 +32,8 @@ services:
         sync: false
       - key: CLERK_PUBLISHABLE_KEY
         sync: false
+      - key: FRONTEND_URL
+        value: https://chaibook-llm.jahangirabbas.com
       - key: CORS_ORIGINS
         value: https://chaibook-llm.jahangirabbas.com,http://localhost:5173
       - key: AWS_ACCESS_KEY_ID
