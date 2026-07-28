@@ -28,7 +28,7 @@ jobs:
       NODE_ENV: test
       OPENAI_API_KEY: sk-proj-test-placeholder-key-for-ci
       CLERK_SECRET_KEY: sk_test_placeholder_key_for_ci
-      DATABASE_URL: '******localhost:5432/chaibook_test'
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chaibook_test
       REDIS_URL: redis://localhost:6379
 
     steps:
