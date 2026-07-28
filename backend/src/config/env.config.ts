@@ -88,7 +88,7 @@ function assertProductionConfig(): void {
 
   const missing: string[] = [];
   if (!config.databaseUrl) missing.push('DATABASE_URL');
-  if (!config.openaiApiKey) missing.push('OPENAI_API_KEY');
+  if (!config.openaiApiKey && !config.groqApiKey) missing.push('OPENAI_API_KEY or GROQ_API_KEY');
   const jinaKey = process.env.JINA_API_KEY || process.env.JENA_API_KEY;
   if (!config.openaiApiKey && !jinaKey) {
     missing.push('OPENAI_API_KEY or JINA_API_KEY (for embeddings)');
@@ -137,6 +137,6 @@ function assertEmbeddingConfig(): void {
 
 assertEmbeddingConfig();
 
-if (!config.openaiApiKey && config.nodeEnv !== 'production') {
-  console.warn('⚠️ WARNING: OPENAI_API_KEY environment variable is not set!');
+if (!config.openaiApiKey && !config.groqApiKey && config.nodeEnv !== 'production') {
+  console.warn('⚠️ WARNING: OPENAI_API_KEY / GROQ_API_KEY environment variable is not set!');
 }
