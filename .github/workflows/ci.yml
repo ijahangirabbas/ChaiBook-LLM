@@ -10,11 +10,25 @@ jobs:
   verify-backend:
     name: Verify Backend API & Repositories
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chaibook_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d chaibook_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       NODE_ENV: test
       OPENAI_API_KEY: sk-proj-test-placeholder-key-for-ci
       CLERK_SECRET_KEY: sk_test_placeholder_key_for_ci
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chaibook_test
+      DATABASE_URL: '******localhost:5432/chaibook_test'
       REDIS_URL: redis://localhost:6379
 
     steps:
@@ -34,6 +48,10 @@ jobs:
 
       - name: Generate Prisma Client
         run: npx prisma generate
+        working-directory: backend
+
+      - name: Apply Prisma Migrations
+        run: npx prisma migrate deploy
         working-directory: backend
 
       - name: TypeScript Build Check
