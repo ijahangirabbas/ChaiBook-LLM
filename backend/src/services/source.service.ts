@@ -4,6 +4,7 @@ import { LoaderInput } from '../loaders/base.loader';
 import { vectorService } from './vector.service';
 import { statusService } from './status.service';
 import { s3Service } from './s3.service';
+import { ingestionJobService } from './job.service';
 import { SourceType } from '../types/source.types';
 import { prisma } from '../db/prisma.client';
 import { enqueueIngestionJob } from '../queue/ingestion.queue';
@@ -25,12 +26,21 @@ export interface ProcessSourceParams {
 
 export class SourceService {
   async processAndIndexSource(params: ProcessSourceParams): Promise<void> {
-    const { sourceId, notebookId, workspaceId = 'default', sourceType, title } = params;
+    const { sourceId, notebookId, workspaceId = 'default', sourceType, title, jobId } = params;
     let resolvedFilePath = params.filePath;
     let tempDownloadPath: string | undefined;
 
     try {
-      await statusService.updateStatus(sourceId, 'indexing', 20);
+      await statusService.updateStatus(sourceId, 'indexing', 25);
+      if (jobId) {
+        await ingestionJobService.recordStageEvent(
+          jobId,
+          sourceId,
+          'extracting',
+          30,
+          'Extracting text content and document structure...'
+        );
+      }
 
       if (!resolvedFilePath && params.s3Key) {
         tempDownloadPath = await s3Service.downloadToTempFile(params.s3Key);
@@ -60,9 +70,28 @@ export class SourceService {
         };
       });
 
-      await statusService.updateStatus(sourceId, 'indexing', 50);
+      await statusService.updateStatus(sourceId, 'indexing', 55);
+      if (jobId) {
+        await ingestionJobService.recordStageEvent(
+          jobId,
+          sourceId,
+          'chunking',
+          60,
+          'Splitting content into semantic passage chunks...'
+        );
+      }
       await this.persistSourceContent(sourceId, workspaceId, sourceType, documents);
+
       await statusService.updateStatus(sourceId, 'indexing', 80);
+      if (jobId) {
+        await ingestionJobService.recordStageEvent(
+          jobId,
+          sourceId,
+          'embedding',
+          80,
+          'Generating vector embeddings and indexing in Qdrant...'
+        );
+      }
       await vectorService.indexDocuments(documents);
 
       if (params.filePath && fs.existsSync(params.filePath)) {
@@ -177,12 +206,16 @@ export class SourceService {
     await enqueueIngestionJob(processParams);
   }
 
-  async deleteSource(sourceId: string, workspaceId = 'default'): Promise<void> {
+  async deleteSource(sourceId: string, workspaceId = 'default'): Promise<boolean> {
     const dbSource = await prisma.source.findFirst({
       where: { id: sourceId, workspaceId, deletedAt: null },
     });
 
-    if (dbSource?.s3Key) {
+    if (!dbSource) {
+      return false;
+    }
+
+    if (dbSource.s3Key) {
       try {
         await s3Service.deleteFile(dbSource.s3Key);
       } catch (err) {
@@ -191,8 +224,9 @@ export class SourceService {
     }
 
     await vectorService.deleteSourceVectors(sourceId);
-    await statusService.deleteStatus(sourceId);
+    await sourceRepository.deleteSource(sourceId, workspaceId);
     console.log(`🗑️ Source ${sourceId} completely deleted from system.`);
+    return true;
   }
 }
 

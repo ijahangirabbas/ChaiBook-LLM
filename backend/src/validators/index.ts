@@ -15,7 +15,7 @@ export const updateNotebookSchema = z.object({
 });
 
 export const createSourceSchema = z.object({
-  type: z.enum(['youtube', 'pdf', 'webpage', 'text', 'markdown', 'srt', 'vtt']),
+  type: z.enum(['youtube', 'pdf', 'webpage', 'text', 'markdown', 'srt', 'vtt']).optional(),
   title: z.string().optional(),
   url: z.string().url('Invalid URL format').optional(),
   content: z.string().max(500_000, 'Content exceeds maximum size of 500KB').optional(),
@@ -31,7 +31,7 @@ export const createConversationSchema = z.object({
 });
 
 export const chatStreamSchema = z.object({
-  message: z.string().min(1, 'Message cannot be empty').max(10_000, 'Message is too long'),
+  message: z.string().trim().min(1, 'Message cannot be empty').max(10_000, 'Message is too long (max 10,000 characters)'),
   conversationId: z.string().uuid('Invalid conversation ID').optional(),
   regenerate: z.boolean().optional(),
 });

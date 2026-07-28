@@ -1,7 +1,9 @@
-import { motion } from 'framer-motion'
-import { MoreHorizontal, BookOpen, Database, FileText, Layout } from 'lucide-react'
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { MoreHorizontal, BookOpen, Database, FileText, Layout, Trash2 } from 'lucide-react'
 import type { Notebook } from '../../types'
 import { formatRelativeTime } from '../../lib/utils'
+import { useAppStore } from '../../store/useAppStore'
 import { cn } from '../../lib/utils'
 
 const COLOR_MAP: Record<string, { icon: string; bg: string; text: string; border: string }> = {
@@ -25,8 +27,18 @@ interface NotebookCardProps {
 }
 
 export function NotebookCard({ notebook, onClick }: NotebookCardProps) {
+  const { deleteNotebook } = useAppStore()
+  const [menuOpen, setMenuOpen] = useState(false)
   const colors = COLOR_MAP[notebook.color] || COLOR_MAP.indigo
   const Icon = ICON_COMPONENT[notebook.icon] || BookOpen
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen(false)
+    if (window.confirm(`Are you sure you want to delete "${notebook.title}"?`)) {
+      deleteNotebook(notebook.id)
+    }
+  }
 
   return (
     <motion.div
@@ -48,18 +60,44 @@ export function NotebookCard({ notebook, onClick }: NotebookCardProps) {
       onKeyDown={(e) => e.key === 'Enter' && onClick?.()}
     >
       {/* More options button */}
-      <button
-        onClick={(e) => { e.stopPropagation() }}
-        className={cn(
-          'absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-md',
-          'opacity-0 group-hover:opacity-100 transition-opacity duration-150',
-          'text-text-muted dark:text-text-muted-dark',
-          'hover:bg-gray-100 dark:hover:bg-white/10'
-        )}
-        aria-label="More options"
-      >
-        <MoreHorizontal className="w-4 h-4" />
-      </button>
+      <div className="absolute top-3 right-3 z-10" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen(!menuOpen)
+          }}
+          className={cn(
+            'w-7 h-7 flex items-center justify-center rounded-md',
+            'opacity-0 group-hover:opacity-100 transition-opacity duration-150',
+            'text-text-muted dark:text-text-muted-dark',
+            'hover:bg-gray-100 dark:hover:bg-white/10',
+            menuOpen && 'opacity-100 bg-gray-100 dark:bg-white/10'
+          )}
+          aria-label="More options"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+
+        <AnimatePresence>
+          {menuOpen && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -4 }}
+              transition={{ duration: 0.15 }}
+              className="absolute right-0 mt-1 w-40 py-1 bg-card dark:bg-card-dark rounded-xl border border-border dark:border-border-dark shadow-lg z-20"
+            >
+              <button
+                onClick={handleDelete}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete Notebook
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Icon */}
       <div className={cn(

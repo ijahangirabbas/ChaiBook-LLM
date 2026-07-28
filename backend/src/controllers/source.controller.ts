@@ -339,13 +339,11 @@ export class SourceController {
       const { sourceId } = req.params;
       const workspaceId = req.user?.workspaceId || 'default';
 
-      const deleted = await sourceRepository.deleteSource(sourceId, workspaceId);
+      const deleted = await sourceService.deleteSource(sourceId, workspaceId);
       if (!deleted) {
         sendError(res, 404, 'NOT_FOUND', `Source "${sourceId}" not found or unauthorized.`);
         return;
       }
-
-      await sourceService.deleteSource(sourceId, workspaceId);
 
       sendJson(res, 200, {
         success: true,

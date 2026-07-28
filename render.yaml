@@ -54,6 +54,7 @@ services:
     dockerContext: ./backend
     dockerCommand: node dist/worker.js
     plan: starter
+    healthCheckPath: /live
     envVars:
       - key: NODE_ENV
         value: production

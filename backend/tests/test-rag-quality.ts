@@ -26,13 +26,38 @@ async function main() {
 
   await initializeQdrantCollection();
 
+  // ─── DB Setup: create real records so FK constraints pass ──────────────────────────
+  const testEmail = `quality.test.${Date.now()}@chaibook.io`;
+  const user = await prisma.user.create({
+    data: { email: testEmail, name: 'Quality Test User', provider: 'test' },
+  });
+  const workspace = await prisma.workspace.create({
+    data: { name: 'Quality Workspace', slug: `quality-ws-${Date.now()}` },
+  });
+  const notebook = await prisma.notebook.create({
+    data: { title: 'Quality Notebook', userId: user.id, workspaceId: workspace.id },
+  });
+  const source = await prisma.source.create({
+    data: {
+      id: sourceId,
+      title: 'Quality Test Source',
+      type: 'TEXT',
+      status: 'READY',
+      notebookId: notebook.id,
+      workspaceId: workspace.id,
+    },
+  });
+  const realNotebookId = notebook.id;
+  const realWorkspaceId = workspace.id;
+  console.log(`   🗄️  DB setup done — workspace: ${realWorkspaceId}, notebook: ${realNotebookId}\n`);
+
   const docs = [
     new Document({
       pageContent:
         'Retrieval Augmented Generation (RAG) combines a retriever with a generator. The retriever finds relevant passages; the generator answers using those passages.',
       metadata: {
-        notebook_id: notebookId,
-        workspace_id: workspaceId,
+        notebook_id: realNotebookId,
+        workspace_id: realWorkspaceId,
         source_id: sourceId,
         source_type: 'text',
         title: 'RAG Basics',
@@ -42,8 +67,8 @@ async function main() {
       pageContent:
         'ChaiBook LLM indexes PDFs, YouTube transcripts, and web pages into Qdrant using Jina or OpenAI embeddings for semantic search.',
       metadata: {
-        notebook_id: notebookId,
-        workspace_id: workspaceId,
+        notebook_id: realNotebookId,
+        workspace_id: realWorkspaceId,
         source_id: sourceId,
         source_type: 'text',
         title: 'ChaiBook Indexing',
@@ -53,8 +78,8 @@ async function main() {
       pageContent:
         'Citation markers like [1] and [2] must map to retrieved chunks so users can verify every claim against original sources.',
       metadata: {
-        notebook_id: notebookId,
-        workspace_id: workspaceId,
+        notebook_id: realNotebookId,
+        workspace_id: realWorkspaceId,
         source_id: sourceId,
         source_type: 'text',
         title: 'Citations Guide',
@@ -95,9 +120,9 @@ async function main() {
   for (const testCase of cases) {
     const results = await vectorService.searchWorkspace(
       testCase.question,
-      notebookId,
+      realNotebookId,
       5,
-      workspaceId
+      realWorkspaceId
     );
 
     const joined = results.map((r) => r.document.pageContent.toLowerCase()).join(' ');
@@ -118,6 +143,10 @@ async function main() {
 
   await vectorService.deleteSourceVectors(sourceId);
   await prisma.sourceChunk.deleteMany({ where: { sourceId } }).catch(() => undefined);
+  // Cascade-delete DB test records
+  await prisma.workspace.delete({ where: { id: realWorkspaceId } }).catch(() => undefined);
+  await prisma.user.delete({ where: { id: user.id } }).catch(() => undefined);
+  void source; // suppress unused var warning
 
   console.log(`\n📊 RAG Quality: ${passed} passed, ${failed} failed.\n`);
   process.exit(failed > 0 ? 1 : 0);

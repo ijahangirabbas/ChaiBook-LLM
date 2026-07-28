@@ -101,32 +101,11 @@ async function processIngestionPipeline(params: ProcessSourceParams, jobId: stri
       jobId,
       sourceId,
       'validating',
-      20,
+      10,
       'Validating source format and content parameters...'
     );
-    await ingestionJobService.recordStageEvent(
-      jobId,
-      sourceId,
-      'extracting',
-      40,
-      'Extracting text content and document structure...'
-    );
-    await ingestionJobService.recordStageEvent(
-      jobId,
-      sourceId,
-      'chunking',
-      60,
-      'Splitting content into semantic passage chunks...'
-    );
-    await ingestionJobService.recordStageEvent(
-      jobId,
-      sourceId,
-      'embedding',
-      80,
-      'Generating vector embeddings and indexing in Qdrant...'
-    );
 
-    await sourceService.processAndIndexSource(params);
+    await sourceService.processAndIndexSource({ ...params, jobId });
 
     await ingestionJobService.recordStageEvent(
       jobId,

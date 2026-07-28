@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { IndexingStatus, SourceType as PrismaSourceType } from '@prisma/client';
 import { prisma } from '../db/prisma.client';
 import { SourceIndexingStatus, SourceType } from '../types/source.types';
+import { invalidateNotebookCache } from '../services/notebook-cache.service';
 
 export class SourceRepository {
   private mapPrismaStatus(status: IndexingStatus): SourceIndexingStatus {
@@ -69,6 +70,8 @@ export class SourceRepository {
         indexingProgress: 0,
       },
     });
+
+    await invalidateNotebookCache(data.workspaceId);
 
     return {
       id: created.id,
@@ -230,6 +233,10 @@ export class SourceRepository {
       where: { id: sourceId, workspaceId, deletedAt: null },
       data: { deletedAt: new Date() },
     });
+
+    if (updated.count > 0) {
+      await invalidateNotebookCache(workspaceId);
+    }
 
     return updated.count > 0;
   }

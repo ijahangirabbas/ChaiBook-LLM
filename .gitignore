@@ -14,12 +14,14 @@ out/
 
 # Environment Variables & Secrets
 .env
+**/.env
 .env.local
 .env.*.local
 .env.development
 .env.test
 .env.production
 !.env.example
+!**/.env.example
 .mcp.json
 *.pem
 *.key

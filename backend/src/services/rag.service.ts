@@ -24,6 +24,7 @@ export class RagService {
   ): Promise<{ totalTokens: number; promptTokens: number; completionTokens: number }> {
     const startTime = Date.now();
     let fullResponseText = '';
+    let completionTokens = 0;
 
     try {
       resetSSEEventCounter();
@@ -88,7 +89,7 @@ export class RagService {
       });
 
       const userPrompt = `<context>\n${formattedContext}</context>\n\nQuestion: ${query}`;
-      const promptTokens = Math.round((RAG_SYSTEM_PROMPT.length + userPrompt.length) / 4);
+      let promptTokens = Math.round((RAG_SYSTEM_PROMPT.length + userPrompt.length) / 4);
 
       let clientDisconnected = false;
       const onClose = () => {
@@ -106,6 +107,7 @@ export class RagService {
             modelName: config.chatModel,
             temperature: 0.2,
             streaming: true,
+            streamUsage: true,
           });
 
           const stream = await llm.stream([
@@ -113,13 +115,31 @@ export class RagService {
             new HumanMessage(userPrompt),
           ]);
 
+          let actualPromptTokens = 0;
+          let actualCompletionTokens = 0;
+
           for await (const chunk of stream) {
             if (clientDisconnected) break;
+
+            if (chunk.usage_metadata) {
+              actualPromptTokens = chunk.usage_metadata.input_tokens || actualPromptTokens;
+              actualCompletionTokens = chunk.usage_metadata.output_tokens || actualCompletionTokens;
+            }
+
             const textToken = typeof chunk.content === 'string' ? chunk.content : String(chunk.content || '');
             if (textToken) {
               fullResponseText += textToken;
               sendSSEEvent(res, { type: 'token.delta', text: textToken });
             }
+          }
+
+          if (actualPromptTokens > 0) {
+            promptTokens = actualPromptTokens;
+          }
+          if (actualCompletionTokens > 0) {
+            completionTokens = actualCompletionTokens;
+          } else {
+            completionTokens = Math.round(fullResponseText.length / 4);
           }
         } catch (llmErr: any) {
           if (clientDisconnected) {
@@ -131,6 +151,7 @@ export class RagService {
           );
           fullResponseText = `Based on your knowledge base sources:\n\n${searchResults.map((r, i) => `[${i + 1}] ${r.document.pageContent}`).join('\n\n')}`;
           sendSSEEvent(res, { type: 'token.delta', text: fullResponseText });
+          completionTokens = Math.round(fullResponseText.length / 4);
         }
       }
 
@@ -139,7 +160,9 @@ export class RagService {
         return emptyTokenStats();
       }
 
-      const completionTokens = Math.round(fullResponseText.length / 4);
+      if (!completionTokens) {
+        completionTokens = Math.round(fullResponseText.length / 4);
+      }
       const totalTokens = promptTokens + completionTokens;
 
       sendSSEEvent(res, { type: 'citations', sources: citedSources });

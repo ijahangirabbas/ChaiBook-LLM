@@ -210,6 +210,7 @@ export interface AppState {
   setSearchOpen: (open: boolean) => void
   setSearchQuery: (query: string) => void
   addNotebook: (notebook: Notebook) => void
+  deleteNotebook: (id: string) => Promise<void>
   updateNotebookTitle: (id: string, title: string) => void
   addSource: (source: Source) => void
   removeSource: (sourceId: string) => void

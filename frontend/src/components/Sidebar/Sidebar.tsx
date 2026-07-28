@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Home, MessageSquare, BookOpen, Database, MessageCircle, Layout, Settings, ChevronDown, MoreHorizontal } from 'lucide-react'
+import { Plus, Home, MessageSquare, BookOpen, Database, MessageCircle, Layout, Settings, ChevronDown, MoreHorizontal, Trash2 } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAppStore } from '../../store/useAppStore'
 // import { UpgradeCard } from '../UpgradeCard/UpgradeCard'
@@ -199,6 +199,7 @@ function NotebookSidebar() {
     activeChatSessionId,
     switchChatSession,
     createChatSession,
+    deleteChatSession,
   } = useAppStore()
 
   // Sessions for current active notebook
@@ -315,19 +316,33 @@ function NotebookSidebar() {
                 {item.id === 'chats' && chatsExpanded && (
                   <div className="ml-5 my-1 border-l-2 border-primary/20 pl-2 space-y-1">
                     {activeNotebookSessions.map((session, i) => (
-                      <button
+                      <div
                         key={session.id}
-                        onClick={() => switchChatSession(session.id)}
                         className={cn(
-                          'w-full text-left px-2.5 py-1.5 rounded-md text-xs truncate transition-colors flex items-center gap-2',
+                          'group/chat w-full px-2.5 py-1.5 rounded-md text-xs transition-colors flex items-center justify-between gap-1',
                           activeChatSessionId === session.id
                             ? 'bg-primary/15 text-primary font-bold'
                             : 'text-text-secondary dark:text-text-secondary-dark hover:bg-gray-100 dark:hover:bg-white/5'
                         )}
                       >
-                        <MessageSquare className="w-3 h-3 shrink-0 opacity-70" />
-                        <span className="truncate">Chat {i + 1}: {session.title.replace(/^Chat \d+:\s*/, '')}</span>
-                      </button>
+                        <button
+                          onClick={() => switchChatSession(session.id)}
+                          className="flex-1 text-left truncate flex items-center gap-2"
+                        >
+                          <MessageSquare className="w-3 h-3 shrink-0 opacity-70" />
+                          <span className="truncate">Chat {i + 1}: {session.title.replace(/^Chat \d+:\s*/, '')}</span>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deleteChatSession(session.id)
+                          }}
+                          className="opacity-0 group-hover/chat:opacity-100 hover:text-red-500 transition-opacity p-0.5"
+                          title="Delete chat thread"
+                        >
+                          <Trash2 className="w-3 h-3 shrink-0" />
+                        </button>
+                      </div>
                     ))}
                     <button
                       onClick={() => currentNotebookId && void createChatSession(currentNotebookId)}

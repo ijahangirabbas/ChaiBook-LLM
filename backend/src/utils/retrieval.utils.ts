@@ -1,6 +1,8 @@
 import { VectorSearchResult } from '../vectorstore/base.vectorstore';
 
-export const MIN_SIMILARITY_SCORE = 0.3;
+export const MIN_SIMILARITY_SCORE = process.env.MIN_SIMILARITY_SCORE
+  ? parseFloat(process.env.MIN_SIMILARITY_SCORE)
+  : 0.35;
 
 export function filterByMinScore(
   results: VectorSearchResult[],

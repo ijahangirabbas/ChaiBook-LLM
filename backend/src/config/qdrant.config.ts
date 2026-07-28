@@ -7,9 +7,13 @@ export const qdrantClient = new QdrantClient({
 });
 
 export function getExpectedVectorDimension(): number {
+  // QDRANT_VECTOR_SIZE is the single source of truth — always read from env first
+  if (process.env.QDRANT_VECTOR_SIZE) {
+    return parseInt(process.env.QDRANT_VECTOR_SIZE, 10);
+  }
   const provider = (process.env.EMBEDDING_PROVIDER || (process.env.JINA_API_KEY ? 'jina' : 'openai')).toLowerCase();
   if (provider === 'jina') {
-    return 768; // Jina Embeddings dimension (jina-embeddings-v5-text-small / jina-embeddings-v2-base-en)
+    return 1024; // jina-embeddings-v5-text-small outputs 1024 dims
   }
   return 1536; // OpenAI text-embedding-3-small dimension
 }
@@ -51,23 +55,27 @@ export async function initializeQdrantCollection(): Promise<void> {
         },
       });
 
-      // Create payload index for fast multi-tenant filtering on notebook_id, source_id, workspace_id
-      await qdrantClient.createPayloadIndex(config.qdrantCollectionName, {
-        field_name: 'metadata.notebook_id',
-        field_schema: 'keyword',
-      });
+    }
 
-      await qdrantClient.createPayloadIndex(config.qdrantCollectionName, {
-        field_name: 'metadata.source_id',
-        field_schema: 'keyword',
-      });
+    // Ensure all payload indexes exist for fast multi-tenant filtering (metadata-nested and root fields)
+    const indexFields = [
+      'metadata.notebook_id',
+      'notebook_id',
+      'metadata.source_id',
+      'source_id',
+      'metadata.workspace_id',
+      'workspace_id',
+    ];
 
-      await qdrantClient.createPayloadIndex(config.qdrantCollectionName, {
-        field_name: 'metadata.workspace_id',
-        field_schema: 'keyword',
-      });
-
-      console.log(`✅ Qdrant collection "${config.qdrantCollectionName}" initialized with payload indexes (dimension ${vectorSize}).`);
+    for (const field of indexFields) {
+      try {
+        await qdrantClient.createPayloadIndex(config.qdrantCollectionName, {
+          field_name: field,
+          field_schema: 'keyword',
+        });
+      } catch (err) {
+        // Ignore if index already exists or creation failed temporarily
+      }
     }
   } catch (error) {
     console.warn(`⚠️ Qdrant connection/initialization warning: ${(error as Error).message}. Running with in-memory fallback if Qdrant is unavailable.`);

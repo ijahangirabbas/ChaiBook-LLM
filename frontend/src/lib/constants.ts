@@ -3,7 +3,7 @@ import type { NavItem, QuickAction, Feature, SourceType } from '../types'
 // Navigation items for Dashboard sidebar
 export const DASHBOARD_NAV_ITEMS: NavItem[] = [
   { id: 'home', label: 'Home', icon: 'Home', path: '/dashboard' },
-  { id: 'new-chat', label: 'New Chat', icon: 'MessageSquare', path: '/chat/new' },
+  // { id: 'new-chat', label: 'New Chat', icon: 'MessageSquare', path: '/chat/new' },
   { id: 'notebooks', label: 'Notebooks', icon: 'BookOpen', path: '/notebooks' },
   { id: 'sources', label: 'Sources', icon: 'Database', path: '/sources' },
   { id: 'chats', label: 'Chats', icon: 'MessageCircle', path: '/chats' },

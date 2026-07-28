@@ -49,6 +49,7 @@ function parseSubtitlesToTranscript(rawText: string) {
 export function SourceInspector() {
   const {
     sources: storeSources,
+    activeNotebookId,
     sourceInspectorOpen,
     activeSourceId,
     activeSourceOverride,
@@ -80,7 +81,14 @@ export function SourceInspector() {
   >([])
   const [chunkTextMap, setChunkTextMap] = useState<Record<string, string>>({})
 
-  const sources = storeSources
+  const currentSourceNotebookId =
+    activeSourceOverride?.notebookId ||
+    storeSources.find((s) => s.id === activeSourceId)?.notebookId ||
+    activeNotebookId
+
+  const sources = currentSourceNotebookId
+    ? storeSources.filter((s) => s.notebookId === currentSourceNotebookId)
+    : storeSources
   const activeIndex = sources.findIndex((s) => s.id === activeSourceId)
   const baseSource = activeIndex >= 0 ? sources[activeIndex] : null
   const source = activeSourceOverride

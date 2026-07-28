@@ -11,7 +11,9 @@ export async function testQdrant(): Promise<boolean> {
 
   const qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
   const apiKey = process.env.QDRANT_API_KEY || undefined;
-  const collectionName = process.env.QDRANT_COLLECTION_NAME || 'chaibook_sources';
+  // .env uses QDRANT_COLLECTION (not QDRANT_COLLECTION_NAME)
+  const collectionName = process.env.QDRANT_COLLECTION || process.env.QDRANT_COLLECTION_NAME || 'chaibook_sources';
+  const vectorSize = parseInt(process.env.QDRANT_VECTOR_SIZE || '1024', 10);
 
   console.log(`🔹 Connecting to Qdrant at: ${qdrantUrl}...`);
 
@@ -30,7 +32,7 @@ export async function testQdrant(): Promise<boolean> {
     if (!exists) {
       console.log(`🔹 Creating Qdrant collection "${collectionName}"...`);
       await client.createCollection(collectionName, {
-        vectors: { size: 1536, distance: 'Cosine' },
+        vectors: { size: vectorSize, distance: 'Cosine' },
       });
       console.log(`✅ Collection "${collectionName}" created successfully.`);
     } else {
@@ -49,8 +51,26 @@ export async function testQdrant(): Promise<boolean> {
     }
 
     // 4. Test Vector Upserting & Payload Filtering
+    // Fetch actual collection vector size (env may differ from what was used at creation time)
+    const collectionInfo = await client.getCollection(collectionName);
+    const actualVectorSize =
+      typeof collectionInfo.config?.params?.vectors === 'object' &&
+      !Array.isArray(collectionInfo.config.params.vectors) &&
+      'size' in collectionInfo.config.params.vectors
+        ? (collectionInfo.config.params.vectors as { size: number }).size
+        : vectorSize;
+
+    if (actualVectorSize !== vectorSize) {
+      console.warn(
+        `⚠️ DIMENSION MISMATCH: QDRANT_VECTOR_SIZE=${vectorSize} but collection uses ${actualVectorSize} dims!`
+      );
+      console.warn(`   → Your embedding model output must match the collection. Recreate the collection or fix QDRANT_VECTOR_SIZE.`);
+    } else {
+      console.log(`✅ Vector size matches: ${actualVectorSize} dimensions.`);
+    }
+
     const testPointId = uuidv4();
-    const mockVector = new Array(1536).fill(0).map(() => Math.random());
+    const mockVector = new Array(actualVectorSize).fill(0).map(() => Math.random());
     const testNotebookId = `test-nb-${Date.now()}`;
 
     console.log(`🔹 Upserting test point (${testPointId}) with notebook_id payload...`);
@@ -101,7 +121,11 @@ export async function testQdrant(): Promise<boolean> {
     console.log('🎉 Qdrant Test Passed Successfully!\n');
     return true;
   } catch (error) {
-    console.error(`❌ Qdrant Test Failed: ${(error as Error).message}\n`);
+    const err = error as Error & { data?: unknown; status?: number };
+    console.error(`❌ Qdrant Test Failed: ${err.message}`);
+    if (err.data) console.error('   Error body:', JSON.stringify(err.data, null, 2));
+    if (err.stack) console.error('   Stack:', err.stack);
+    console.error('   vectorSize used:', vectorSize);
     return false;
   }
 }

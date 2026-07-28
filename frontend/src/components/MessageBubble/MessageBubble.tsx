@@ -15,11 +15,15 @@ interface MessageBubbleProps {
 }
 
 export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
-  const { openSourceInspector } = useAppStore()
+  const { user, openSourceInspector } = useAppStore()
   const [copied, setCopied] = useState(false)
   const [liked, setLiked] = useState<boolean | null>(null)
 
   const isUser = message.role === 'user'
+  const userInitial =
+    user?.name?.trim().charAt(0).toUpperCase() ||
+    user?.email?.trim().charAt(0).toUpperCase() ||
+    'U'
 
   const handleCopy = async () => {
     try {
@@ -42,7 +46,7 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
           'bg-[#5B46F6]'
         )}
       >
-        {isUser ? 'M' : '☕'}
+        {isUser ? userInitial : '☕'}
       </div>
 
       <div className="flex-1 min-w-0">

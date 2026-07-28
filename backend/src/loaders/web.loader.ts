@@ -58,7 +58,7 @@ export class WebLoader extends BaseLoader {
     let pageContent = input.rawContent || '';
     let domain = 'webpage';
 
-    if (input.url) {
+    if (input.url && !input.rawContent) {
       const parsed = new URL(input.url);
       domain = parsed.hostname;
 
@@ -67,13 +67,27 @@ export class WebLoader extends BaseLoader {
       const extracted = extractReadableText(html, input.url);
       pageTitle = extracted.title || pageTitle;
       pageContent = extracted.text;
+    } else if (input.url) {
+      const parsed = new URL(input.url);
+      domain = parsed.hostname;
     }
 
     const cleanContent = pageContent.replace(/\s+/g, ' ').trim();
-    if (!cleanContent) {
+    const lowerContent = cleanContent.toLowerCase();
+
+    const isSpaPlaceholder =
+      cleanContent.length < 100 ||
+      lowerContent.includes('enable javascript to run this app') ||
+      lowerContent.includes('javascript is required') ||
+      lowerContent.includes('you need to enable javascript') ||
+      lowerContent.includes('please enable javascript') ||
+      lowerContent.includes('browser does not support javascript');
+
+    if (!cleanContent || isSpaPlaceholder) {
       throw new Error(
-        `No readable content could be extracted from "${input.url || input.title}". ` +
-          'The page may be empty, blocked, or require JavaScript to render.'
+        `Could not extract readable text from "${input.url || input.title}". ` +
+          'This webpage appears to be a Single-Page Application (SPA) or requires JavaScript to render content. ' +
+          'Please copy and paste the page text directly into ChaiBook using "+ Add Source" -> "Copy-Pasted Text".'
       );
     }
 

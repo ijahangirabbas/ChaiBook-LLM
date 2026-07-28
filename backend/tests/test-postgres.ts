@@ -63,22 +63,32 @@ export async function testPostgres(): Promise<boolean> {
     });
     console.log(`✅ User created! ID: ${user.id}`);
 
+    // Create a Workspace first (Notebook now requires workspaceId)
+    console.log(`🔹 Creating test Workspace...`);
+    const workspace = await prisma.workspace.create({
+      data: {
+        name: 'Test Workspace',
+        slug: `test-ws-${Date.now()}`,
+      },
+    });
+    console.log(`✅ Workspace created! ID: ${workspace.id}`);
+
     console.log(`🔹 Creating test Notebook for User...`);
     const notebook = await prisma.notebook.create({
       data: {
-        title: 'Integration Test Workspace',
+        title: 'Integration Test Notebook',
         userId: user.id,
+        workspaceId: workspace.id,
         color: 'indigo',
         icon: 'book',
       },
     });
     console.log(`✅ Notebook created! ID: ${notebook.id}`);
 
-    // 4. Clean up Test Records
+    // 4. Clean up Test Records (workspace cascade-deletes notebook)
     console.log('🔹 Cleaning up test records...');
-    await prisma.user.delete({
-      where: { id: user.id },
-    });
+    await prisma.workspace.delete({ where: { id: workspace.id } });
+    await prisma.user.delete({ where: { id: user.id } });
     console.log('✅ Test records cleaned up successfully.');
 
     await prisma.$disconnect();

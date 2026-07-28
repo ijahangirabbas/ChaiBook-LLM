@@ -13,6 +13,7 @@ const NotebookPage = lazy(() => import('./pages/Notebook/NotebookPage').then(m =
 const ChatsPage = lazy(() => import('./pages/Chats/ChatsPage').then(m => ({ default: m.ChatsPage })))
 const SourcesPage = lazy(() => import('./pages/Sources/SourcesPage').then(m => ({ default: m.SourcesPage })))
 const SettingsPage = lazy(() => import('./pages/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })))
+const ProfilePage = lazy(() => import('./pages/Profile/ProfilePage').then(m => ({ default: m.ProfilePage })))
 const ChatPage = lazy(() => import('./pages/Chat/ChatPage').then(m => ({ default: m.ChatPage })))
 
 // Loading fallback
@@ -131,6 +132,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<PageLoader />}>
             <SettingsPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/profile',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <ProfilePage />
           </Suspense>
         ),
       },

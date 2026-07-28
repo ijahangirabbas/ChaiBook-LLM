@@ -141,7 +141,7 @@ export function UserMenu() {
                 <button
                   onClick={() => {
                     setOpen(false)
-                    setActiveModal('profile')
+                    navigate('/profile')
                   }}
                   role="menuitem"
                   className={cn(

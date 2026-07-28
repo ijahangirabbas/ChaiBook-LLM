@@ -53,8 +53,10 @@ export function ChatPage() {
   const currentNotebook = notebooks.find((n) => n.id === currentNotebookId)
   const notebookTitle = currentNotebook?.title ?? 'Research Notebook'
 
-  const activeSession = chatSessions.find((s) => s.id === activeChatSessionId)
-  const currentMessages = activeSession ? activeSession.messages : storeMessages
+  const activeSession = chatSessions.find(
+    (s) => s.id === activeChatSessionId && s.notebookId === currentNotebookId
+  )
+  const currentMessages = activeSession ? activeSession.messages : []
 
   const [showAllSources, setShowAllSources] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)

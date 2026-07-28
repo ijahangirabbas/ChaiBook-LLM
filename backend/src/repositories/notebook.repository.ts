@@ -127,17 +127,6 @@ export class NotebookRepository {
         update: {},
       });
 
-      const user = await prisma.user.upsert({
-        where: { id: data.userId },
-        create: {
-          id: data.userId,
-          email: `${data.userId}@auth.local`,
-          name: 'Workspace User',
-          provider: 'system',
-        },
-        update: {},
-      });
-
       const created = await prisma.notebook.create({
         data: {
           title: data.title,
@@ -145,10 +134,11 @@ export class NotebookRepository {
           color: data.color || 'indigo',
           icon: data.icon || 'book',
           workspaceId: ws.id,
-          userId: user.id,
+          userId: data.userId,
         },
       });
 
+      await invalidateNotebookCache(created.workspaceId);
       return {
         id: created.id,
         title: created.title,
@@ -188,6 +178,8 @@ export class NotebookRepository {
         ...(data.icon !== undefined && { icon: data.icon }),
       },
     });
+
+    await invalidateNotebookCache(workspaceId);
 
     return {
       id: updated.id,
@@ -232,6 +224,8 @@ export class NotebookRepository {
       },
     });
 
+    await invalidateNotebookCache(workspaceId);
+
     return {
       id: duplicated.id,
       title: duplicated.title,
@@ -258,6 +252,8 @@ export class NotebookRepository {
       data: { favoritedAt: existing.favoritedAt ? null : new Date() },
     });
 
+    await invalidateNotebookCache(workspaceId);
+
     return true;
   }
 
@@ -272,6 +268,8 @@ export class NotebookRepository {
       where: { id },
       data: { archivedAt: existing.archivedAt ? null : new Date() },
     });
+
+    await invalidateNotebookCache(workspaceId);
 
     return true;
   }
@@ -301,6 +299,8 @@ export class NotebookRepository {
       where: { id },
       data: { deletedAt: new Date() },
     });
+
+    await invalidateNotebookCache(workspaceId);
 
     return true;
   }

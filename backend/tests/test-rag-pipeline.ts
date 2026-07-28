@@ -13,8 +13,36 @@ export async function testRagPipeline(): Promise<boolean> {
   console.log('🧪 RAG PIPELINE & EMBEDDINGS INTEGRATION TEST SUITE');
   console.log('======================================================\n');
 
-  const testNotebookId = `test-nb-${uuidv4()}`;
-  const testWorkspaceId = 'test-workspace';
+  // ─── DB Setup: create real Workspace + Notebook so FK constraints pass ────
+  let workspaceId = '';
+  let testNotebookId = '';
+  let testUserId = '';
+  const testEmail = `rag.test.${Date.now()}@chaibook.io`;
+
+  try {
+    const user = await prisma.user.create({
+      data: { email: testEmail, name: 'RAG Test User', provider: 'test' },
+    });
+    testUserId = user.id;
+
+    const workspace = await prisma.workspace.create({
+      data: { name: 'RAG Test Workspace', slug: `rag-ws-${Date.now()}` },
+    });
+    workspaceId = workspace.id;
+
+    const notebook = await prisma.notebook.create({
+      data: {
+        title: 'RAG Test Notebook',
+        userId: testUserId,
+        workspaceId,
+      },
+    });
+    testNotebookId = notebook.id;
+    console.log(`   🗄️  DB setup complete — workspace: ${workspaceId}, notebook: ${testNotebookId}\n`);
+  } catch (dbErr) {
+    console.error('❌ DB setup failed:', (dbErr as Error).message);
+    return false;
+  }
 
   const ytSourceId = `test-yt-${uuidv4()}`;
   const webSourceId = `test-web-${uuidv4()}`;
@@ -31,7 +59,7 @@ export async function testRagPipeline(): Promise<boolean> {
     await sourceRepository.createSource({
       sourceId: ytSourceId,
       notebookId: testNotebookId,
-      workspaceId: testWorkspaceId,
+      workspaceId,
       title: 'Intro to Quantum Computing (YouTube Video)',
       type: 'youtube',
       url: 'https://www.youtube.com/watch?v=u1GG86VbhhQ',
@@ -47,7 +75,7 @@ export async function testRagPipeline(): Promise<boolean> {
     await sourceService.processAndIndexSource({
       sourceId: ytSourceId,
       notebookId: testNotebookId,
-      workspaceId: testWorkspaceId,
+      workspaceId,
       sourceType: 'youtube',
       title: 'Intro to Quantum Computing (YouTube Video)',
       url: 'https://www.youtube.com/watch?v=u1GG86VbhhQ',
@@ -62,7 +90,7 @@ export async function testRagPipeline(): Promise<boolean> {
     await sourceRepository.createSource({
       sourceId: webSourceId,
       notebookId: testNotebookId,
-      workspaceId: testWorkspaceId,
+      workspaceId,
       title: 'CSS Exam Syllabus Guide (Web Article)',
       type: 'webpage',
       url: 'https://example.org/css-syllabus',
@@ -78,7 +106,7 @@ export async function testRagPipeline(): Promise<boolean> {
     await sourceService.processAndIndexSource({
       sourceId: webSourceId,
       notebookId: testNotebookId,
-      workspaceId: testWorkspaceId,
+      workspaceId,
       sourceType: 'webpage',
       title: 'CSS Exam Syllabus Guide (Web Article)',
       url: 'https://example.org/css-syllabus',
@@ -104,7 +132,7 @@ export async function testRagPipeline(): Promise<boolean> {
     console.log('5️⃣ Testing RAG Similarity Search for YouTube & Web Embeddings...');
 
     // Test YouTube retrieval
-    const ytResults = await vectorService.searchWorkspace('What is quantum entanglement and superposition?', testNotebookId, 3, testWorkspaceId);
+    const ytResults = await vectorService.searchWorkspace('What is quantum entanglement and superposition?', testNotebookId, 3, workspaceId);
     console.log(`   🔍 Query: "What is quantum entanglement and superposition?"`);
     console.log(`   📊 Retrieved Chunks: ${ytResults.length}`);
     if (ytResults.length > 0) {
@@ -113,7 +141,7 @@ export async function testRagPipeline(): Promise<boolean> {
     }
 
     // Test Web Page retrieval
-    const webResults = await vectorService.searchWorkspace('Which 200 mark subjects are in Group I?', testNotebookId, 3, testWorkspaceId);
+    const webResults = await vectorService.searchWorkspace('Which 200 mark subjects are in Group I?', testNotebookId, 3, workspaceId);
     console.log(`\n   🔍 Query: "Which 200 mark subjects are in Group I?"`);
     console.log(`   📊 Retrieved Chunks: ${webResults.length}`);
     if (webResults.length > 0) {
@@ -128,8 +156,9 @@ export async function testRagPipeline(): Promise<boolean> {
     await vectorService.deleteSourceVectors(ytSourceId);
     await vectorService.deleteSourceVectors(webSourceId);
     try {
-      await prisma.source.deleteMany({ where: { id: { in: [ytSourceId, webSourceId] } } });
-      await prisma.notebook.delete({ where: { id: testNotebookId } });
+      // Deleting workspace cascades to notebook and sources
+      await prisma.workspace.delete({ where: { id: workspaceId } });
+      await prisma.user.delete({ where: { id: testUserId } });
     } catch {
       // Ignore DB clean-up errors
     }
@@ -141,6 +170,11 @@ export async function testRagPipeline(): Promise<boolean> {
     return true;
   } catch (error) {
     console.error('❌ RAG Pipeline Test Error:', (error as Error).message);
+    // Best-effort cleanup on failure
+    try {
+      if (workspaceId) await prisma.workspace.delete({ where: { id: workspaceId } }).catch(() => undefined);
+      if (testUserId)  await prisma.user.delete({ where: { id: testUserId } }).catch(() => undefined);
+    } catch { /* ignore */ }
     return false;
   }
 }

@@ -4,28 +4,39 @@ import { URL } from 'url';
 
 const BLOCKED_HOSTNAMES = new Set([
   'localhost',
+  'localhost.localdomain',
   'metadata.google.internal',
   'metadata.google',
+  'metadata',
   '169.254.169.254',
+  '0.0.0.0',
 ]);
 
 function isPrivateIpv4(ip: string): boolean {
   const parts = ip.split('.').map(Number);
   if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) return false;
-  const [a, b] = parts;
-  if (a === 10) return true;
-  if (a === 127) return true;
-  if (a === 0) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
+  const [a, b, c] = parts;
+
+  if (a === 0) return true; // 0.0.0.0/8
+  if (a === 10) return true; // 10.0.0.0/8 Private
+  if (a === 127) return true; // 127.0.0.0/8 Loopback
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16 Link-local
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 Private
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16 Private
+  if (a === 192 && b === 0 && c === 2) return true; // 192.0.2.0/24 TEST-NET-1
+  if (a === 198 && b === 51 && c === 100) return true; // 198.51.100.0/24 TEST-NET-2
+  if (a === 203 && b === 0 && c === 113) return true; // 203.0.113.0/24 TEST-NET-3
+  if (a >= 224) return true; // 224.0.0.0/4 Multicast & Reserved
   return false;
 }
 
 function isPrivateIpv6(ip: string): boolean {
-  const normalized = ip.toLowerCase();
+  const normalized = ip.toLowerCase().replace(/^\[|\]$/g, '');
   return (
+    normalized === '::' ||
     normalized === '::1' ||
+    normalized.startsWith('::ffff:127.') ||
     normalized.startsWith('fc') ||
     normalized.startsWith('fd') ||
     normalized.startsWith('fe80')
@@ -54,9 +65,14 @@ export async function assertSafeUrl(rawUrl: string): Promise<URL> {
     throw new Error('URLs with embedded credentials are not allowed.');
   }
 
-  const hostname = parsed.hostname.toLowerCase();
-  if (BLOCKED_HOSTNAMES.has(hostname)) {
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (BLOCKED_HOSTNAMES.has(hostname) || hostname.endsWith('.internal') || hostname.endsWith('.local')) {
     throw new Error(`URL hostname "${hostname}" is not allowed.`);
+  }
+
+  // Block octal/hex/integer IP notations (e.g. 0177.0.0.1, 2130706433, 0x7f000001)
+  if (/^(0x[0-9a-f]+|\d+)$/i.test(hostname) || /^(0[0-7]+\.|\d+\.0)/.test(hostname)) {
+    throw new Error('Numeric or encoded IP hostname representations are not allowed.');
   }
 
   if (net.isIP(hostname)) {

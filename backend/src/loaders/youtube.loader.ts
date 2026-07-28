@@ -18,12 +18,19 @@ function isLiveOrShortsUrl(url: string): string | null {
   return null;
 }
 
+function extractYouTubeVideoId(url: string): string | null {
+  if (!url) return null;
+  const match = url.match(/(?:v=|\/embed\/|\/watch\?v=|youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  return match ? match[1] : null;
+}
+
 async function fetchTranscriptWithFallback(url: string) {
   const errors: string[] = [];
+  const videoId = extractYouTubeVideoId(url) || url;
 
   for (const lang of TRANSCRIPT_LANGS) {
     try {
-      const raw = await YoutubeTranscript.fetchTranscript(url, { lang });
+      const raw = await YoutubeTranscript.fetchTranscript(videoId, { lang });
       if (raw && raw.length > 0) return raw;
     } catch (err) {
       errors.push(`${lang}: ${(err as Error).message}`);
@@ -31,14 +38,14 @@ async function fetchTranscriptWithFallback(url: string) {
   }
 
   try {
-    const raw = await YoutubeTranscript.fetchTranscript(url);
+    const raw = await YoutubeTranscript.fetchTranscript(videoId);
     if (raw && raw.length > 0) return raw;
   } catch (err) {
     errors.push(`default: ${(err as Error).message}`);
   }
 
   throw new Error(
-    `No captions found for this video in any supported language. ${errors.slice(0, 2).join(' ')}`
+    `No transcript found for YouTube video. Make sure captions/subtitles are enabled on this video.`
   );
 }
 
@@ -50,7 +57,24 @@ export class YoutubeLoader extends BaseLoader {
 
     let transcriptEntries: TranscriptEntry[] = [];
 
-    if (input.url) {
+    if (input.rawContent) {
+      const lines = input.rawContent.split('\n').filter((l) => l.trim().length > 0);
+      transcriptEntries = lines.map((line, idx) => {
+        const tsMatch = line.match(/\[(\d{2}):(\d{2}):(\d{2})\]/);
+        let startSec = idx * 15;
+        if (tsMatch) {
+          const hrs = parseInt(tsMatch[1], 10);
+          const mins = parseInt(tsMatch[2], 10);
+          const secs = parseInt(tsMatch[3], 10);
+          startSec = hrs * 3600 + mins * 60 + secs;
+        }
+        return {
+          timestamp: secondsToTimeString(startSec),
+          seconds: startSec,
+          text: line.replace(/\[\d{2}:\d{2}:\d{2}\]/, '').trim() || line.trim(),
+        };
+      });
+    } else if (input.url) {
       await assertSafeUrl(input.url);
       const liveError = isLiveOrShortsUrl(input.url);
       if (liveError) throw new Error(liveError);
@@ -62,18 +86,6 @@ export class YoutubeLoader extends BaseLoader {
           timestamp: secondsToTimeString(startSeconds),
           seconds: startSeconds,
           text: item.text,
-        };
-      });
-    }
-
-    if (transcriptEntries.length === 0 && input.rawContent) {
-      const lines = input.rawContent.split('\n').filter((l) => l.trim().length > 0);
-      transcriptEntries = lines.map((line, idx) => {
-        const startSec = idx * 15;
-        return {
-          timestamp: secondsToTimeString(startSec),
-          seconds: startSec,
-          text: line.replace(/\[\d{2}:\d{2}:\d{2}\]/, '').trim() || line.trim(),
         };
       });
     }
