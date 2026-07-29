@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { MessageCircle, BookOpen, ArrowRight } from 'lucide-react'
 import { Header } from '../../../components/Header/Header'
-import { useAppStore } from '../../../store/useAppStore'
 import { ApiService } from '../../../services/api.service'
 import { cn } from '../../../lib/utils'
 
@@ -18,7 +17,6 @@ interface WorkspaceConversation {
 
 export function ChatsPage() {
   const navigate = useNavigate()
-  const { setActiveNotebook } = useAppStore()
   const [conversations, setConversations] = useState<WorkspaceConversation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -41,7 +39,7 @@ export function ChatsPage() {
   }, [])
 
   const openConversation = (conv: WorkspaceConversation) => {
-    setActiveNotebook(conv.notebookId)
+    // Let ChatPage load the notebook + this conversation from DB via location state.
     navigate(`/chat/${conv.notebookId}`, { state: { conversationId: conv.id } })
   }
 

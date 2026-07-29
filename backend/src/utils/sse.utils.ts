@@ -9,9 +9,18 @@ export function resetSSEEventCounter(): void {
 
 export function sendSSEEvent(res: Response, payload: SSEPayload): number {
   const eventId = ++eventCounter;
-  res.write(`id: ${eventId}\n`);
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  if (!res.writableEnded) {
+    res.write(`id: ${eventId}\n`);
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  }
   return eventId;
+}
+
+export function endSSE(res: Response): void {
+  if (!res.writableEnded) {
+    res.write('data: [DONE]\n\n');
+    res.end();
+  }
 }
 
 export function getLastEventIdHeader(req: { headers: Record<string, unknown> }): number | null {

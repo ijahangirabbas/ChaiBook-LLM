@@ -5,7 +5,7 @@ import { vectorService } from './vector.service';
 import { config } from '../config/env.config';
 import { RAG_SYSTEM_PROMPT } from '../constants/rag.constants';
 import { CitedSource } from '../types/chat.types';
-import { sendSSEEvent, resetSSEEventCounter } from '../utils/sse.utils';
+import { sendSSEEvent, resetSSEEventCounter, endSSE } from '../utils/sse.utils';
 import { conversationRepository } from '../repositories/conversation.repository';
 import { recordTokenUsage } from './workspace-quota.service';
 import { llmTokensTotal } from '../lib/metrics';
@@ -33,6 +33,7 @@ export class RagService {
       if (!activeConversationId) {
         sendSSEEvent(res, { type: 'failed', error: 'Missing conversation ID for chat stream.' });
         sendSSEEvent(res, { type: 'error', message: 'Missing conversation ID for chat stream.' });
+        endSSE(res);
         return emptyTokenStats();
       }
 
@@ -47,6 +48,7 @@ export class RagService {
         sendSSEEvent(res, { type: 'citations', sources: [] });
         sendSSEEvent(res, { type: 'completed' });
         sendSSEEvent(res, { type: 'done' });
+        endSSE(res);
 
         try {
           await conversationRepository.addMessage({
@@ -93,7 +95,10 @@ export class RagService {
 
       let clientDisconnected = false;
       const onClose = () => {
-        clientDisconnected = true;
+        // Only treat as disconnect if the response was not ended by us
+        if (!res.writableEnded) {
+          clientDisconnected = true;
+        }
       };
       res.on('close', onClose);
 
@@ -145,6 +150,7 @@ export class RagService {
         } catch (llmErr: any) {
           if (clientDisconnected) {
             res.off('close', onClose);
+            endSSE(res);
             return emptyTokenStats();
           }
           console.error(
@@ -162,6 +168,7 @@ export class RagService {
 
       if (clientDisconnected) {
         res.off('close', onClose);
+        endSSE(res);
         return emptyTokenStats();
       }
 
@@ -210,6 +217,7 @@ export class RagService {
       sendSSEEvent(res, { type: 'completed', conversationId: activeConversationId });
       sendSSEEvent(res, { type: 'done' });
       res.off('close', onClose);
+      endSSE(res);
 
       return { totalTokens, promptTokens, completionTokens };
     } catch (error) {
@@ -217,6 +225,7 @@ export class RagService {
       console.error('❌ Error in RagService:', errMsg);
       sendSSEEvent(res, { type: 'failed', error: errMsg });
       sendSSEEvent(res, { type: 'error', message: errMsg });
+      endSSE(res);
       return emptyTokenStats();
     }
   }

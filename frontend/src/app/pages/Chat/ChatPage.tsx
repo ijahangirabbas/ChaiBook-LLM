@@ -16,6 +16,7 @@ import { cn } from '../../../lib/utils'
 export function ChatPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const {
     notebooks,
     loadingNotebooks,
@@ -33,21 +34,49 @@ export function ChatPage() {
     chatSessions,
     activeChatSessionId,
     createChatSession,
+    fetchNotebookSources,
+    fetchNotebookChatHistory,
     fetchNotebooksFromApi,
     switchChatSession,
   } = useAppStore()
 
   const currentNotebookId = id
-  const location = useLocation()
   const streamAbortRef = useRef<AbortController | null>(null)
   const initialActionRef = useRef(false)
+  const historyLoadedForRef = useRef<string | null>(null)
+
+  const locationState = (location.state || {}) as { initialMessage?: string; conversationId?: string }
+  const preferredConversationId = locationState.conversationId
 
   useEffect(() => {
-    if (currentNotebookId) {
-      setActiveNotebook(currentNotebookId)
+    if (!currentNotebookId) return
+
+    setActiveNotebook(currentNotebookId)
+
+    // Ensure notebook list is present (direct links / refresh).
+    if (!useAppStore.getState().notebooks.some((n) => n.id === currentNotebookId)) {
+      void fetchNotebooksFromApi()
     }
-    fetchNotebooksFromApi()
-  }, [currentNotebookId])
+
+    // Load sources + chat history once per notebook visit; honor deep-linked conversation.
+    const needsHistoryLoad = historyLoadedForRef.current !== currentNotebookId
+    if (needsHistoryLoad) {
+      historyLoadedForRef.current = currentNotebookId
+      void fetchNotebookSources(currentNotebookId, preferredConversationId)
+    } else if (
+      preferredConversationId &&
+      preferredConversationId !== useAppStore.getState().activeChatSessionId
+    ) {
+      void fetchNotebookChatHistory(currentNotebookId, preferredConversationId)
+    }
+  }, [
+    currentNotebookId,
+    preferredConversationId,
+    setActiveNotebook,
+    fetchNotebookSources,
+    fetchNotebookChatHistory,
+    fetchNotebooksFromApi,
+  ])
 
   const currentNotebook = notebooks.find((n) => n.id === currentNotebookId)
   const notebookTitle = currentNotebook?.title ?? 'Research Notebook'
@@ -79,16 +108,27 @@ export function ChatPage() {
     ) => {
       if (!currentNotebookId) return
 
+      // Mark streaming immediately so history refetch cannot wipe in-flight tokens.
+      setIsStreaming(true)
+      setStreaming(true)
+
       let conversationId = options?.conversationId || activeChatSessionId
 
       if (!conversationId) {
         try {
-          conversationId = await createChatSession(currentNotebookId, content.slice(0, 40) || 'New Conversation')
+          conversationId = await createChatSession(
+            currentNotebookId,
+            content.slice(0, 40) || 'New Conversation'
+          )
         } catch (err) {
           console.error('Failed to create conversation:', err)
+          setIsStreaming(false)
+          setStreaming(false)
           return
         }
       }
+
+      const targetConversationId = conversationId
 
       if (!options?.skipUserMessage) {
         const userMsg: Message = {
@@ -97,20 +137,20 @@ export function ChatPage() {
           content,
           timestamp: new Date(),
         }
-        addMessage(userMsg)
+        addMessage(userMsg, targetConversationId)
       }
 
       const aiMsgId = generateId()
-      addMessage({
-        id: aiMsgId,
-        role: 'assistant',
-        content: '',
-        timestamp: new Date(),
-        isStreaming: true,
-      })
-
-      setIsStreaming(true)
-      setStreaming(true)
+      addMessage(
+        {
+          id: aiMsgId,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          isStreaming: true,
+        },
+        targetConversationId
+      )
 
       const activeNotebookSources = sources.filter(
         (s) => !s.notebookId || s.notebookId === currentNotebookId
@@ -122,14 +162,18 @@ export function ChatPage() {
       streamAbortRef.current = new AbortController()
 
       const finish = (sourcesForMessage?: Source[], errorContent?: string) => {
-        updateMessage(aiMsgId, {
-          content:
-            errorContent ||
-            accumulatedContent ||
-            'The response completed without content. Please try again.',
-          sources: sourcesForMessage,
-          isStreaming: false,
-        })
+        updateMessage(
+          aiMsgId,
+          {
+            content:
+              errorContent ||
+              accumulatedContent ||
+              'The response completed without content. Please try again.',
+            sources: sourcesForMessage,
+            isStreaming: false,
+          },
+          targetConversationId
+        )
         setIsStreaming(false)
         setStreaming(false)
         streamAbortRef.current = null
@@ -140,7 +184,11 @@ export function ChatPage() {
         content,
         (token) => {
           accumulatedContent += token
-          updateMessage(aiMsgId, { content: accumulatedContent, isStreaming: true })
+          updateMessage(
+            aiMsgId,
+            { content: accumulatedContent, isStreaming: true },
+            targetConversationId
+          )
         },
         () => {
           const finalSources = mapCitationsToSources(
@@ -177,10 +225,10 @@ export function ChatPage() {
         },
         {
           signal: streamAbortRef.current.signal,
-          conversationId: conversationId || undefined,
+          conversationId: targetConversationId || undefined,
           regenerate: options?.regenerate,
           onConversationStarted: (newConversationId) => {
-            if (!activeChatSessionId) {
+            if (getActiveSessionId() !== newConversationId) {
               useAppStore.setState({ activeChatSessionId: newConversationId })
             }
           },
@@ -198,6 +246,10 @@ export function ChatPage() {
     ]
   )
 
+  function getActiveSessionId() {
+    return useAppStore.getState().activeChatSessionId
+  }
+
   useEffect(() => {
     if (!currentNotebookId || loadingNotebooks || !currentNotebook || initialActionRef.current) return
 
@@ -205,8 +257,8 @@ export function ChatPage() {
 
     if (state.conversationId) {
       const sessionExists = chatSessions.some((s) => s.id === state.conversationId)
-      if (sessionExists) {
-        switchChatSession(state.conversationId)
+      if (sessionExists && activeChatSessionId !== state.conversationId) {
+        void switchChatSession(state.conversationId)
       }
     }
 
@@ -234,6 +286,7 @@ export function ChatPage() {
     navigate,
     runChatStream,
     switchChatSession,
+    activeChatSessionId,
   ])
 
   const handleSend = (content: string) => {
@@ -253,11 +306,12 @@ export function ChatPage() {
       .find((m) => m.role === 'user')
     if (!priorUser) return
 
-    removeMessage(assistantMessageId)
+    const conversationId = activeChatSessionId || undefined
+    removeMessage(assistantMessageId, conversationId)
     void runChatStream(priorUser.content, {
       regenerate: true,
       skipUserMessage: true,
-      conversationId: activeChatSessionId || undefined,
+      conversationId,
     })
   }
 

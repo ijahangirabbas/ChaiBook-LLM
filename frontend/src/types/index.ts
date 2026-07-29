@@ -197,11 +197,11 @@ export interface AppState {
   setActiveNotebook: (id: string | null) => void
   fetchNotebooksFromApi: () => Promise<void>
   createChatSession: (notebookId: string, title?: string) => Promise<string>
-  switchChatSession: (sessionId: string) => void
+  switchChatSession: (sessionId: string) => Promise<void>
   deleteChatSession: (sessionId: string) => Promise<void>
-  addMessage: (message: Message) => void
-  updateMessage: (messageId: string, patch: Partial<Message>) => void
-  removeMessage: (messageId: string) => void
+  addMessage: (message: Message, conversationId?: string) => void
+  updateMessage: (messageId: string, patch: Partial<Message>, conversationId?: string) => void
+  removeMessage: (messageId: string, conversationId?: string) => void
   setStreaming: (streaming: boolean) => void
   openSourceInspector: (sourceId: string, customSource?: Source, defaultTab?: 'overview' | 'retrieved') => void
   closeSourceInspector: () => void
@@ -217,8 +217,8 @@ export interface AppState {
   reindexSource: (sourceId: string) => void
   updateSourceStatus: (sourceId: string, status: SourceIndexingStatus, progress?: number) => void
   pollPendingSources: () => Promise<void>
-  fetchNotebookSources: (notebookId: string) => Promise<void>
-  fetchNotebookChatHistory: (notebookId: string) => Promise<void>
+  fetchNotebookSources: (notebookId: string, preferredConversationId?: string) => Promise<void>
+  fetchNotebookChatHistory: (notebookId: string, preferredConversationId?: string) => Promise<void>
 }
 
 // ─── Add Source Modal Types ───────────────────────────────────────────────────

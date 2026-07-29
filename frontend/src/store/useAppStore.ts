@@ -153,25 +153,30 @@ export const useAppStore = create<AppState>()(
       switchChatSession: async (sessionId: string) => {
         const state = get()
         const targetSession = state.chatSessions.find((s) => s.id === sessionId)
-        if (targetSession) {
-          let messages = targetSession.messages
-          if (!messages || messages.length === 0) {
-            try {
-              messages = await ApiService.getConversationMessages(sessionId)
-              set((st) => ({
-                chatSessions: st.chatSessions.map((s) =>
-                  s.id === sessionId ? { ...s, messages } : s
-                ),
-              }))
-            } catch {
-              messages = []
-            }
-          }
-          set({
+        if (!targetSession) return
+
+        // Switch immediately so the UI reflects the selected thread.
+        set({
+          activeChatSessionId: sessionId,
+          activeNotebookId: targetSession.notebookId,
+          messages: targetSession.messages || [],
+        })
+
+        // Always reload from DB — cached empty arrays from history sync were
+        // causing previous chats to appear blank after switching threads.
+        try {
+          const messages = await ApiService.getConversationMessages(sessionId)
+          // Ignore stale responses if the user switched again while loading.
+          if (get().activeChatSessionId !== sessionId) return
+          set((st) => ({
             activeChatSessionId: sessionId,
-            activeNotebookId: targetSession.notebookId,
             messages,
-          })
+            chatSessions: st.chatSessions.map((s) =>
+              s.id === sessionId ? { ...s, messages } : s
+            ),
+          }))
+        } catch (err) {
+          console.error('Failed to load conversation messages:', err)
         }
       },
 
@@ -196,28 +201,31 @@ export const useAppStore = create<AppState>()(
         })
       },
 
-      addMessage: (message: Message) => {
+      addMessage: (message: Message, conversationId?: string) => {
         set((state) => {
-          const activeSessId = state.activeChatSessionId
+          const targetId = conversationId || state.activeChatSessionId
+          const isActiveTarget = targetId === state.activeChatSessionId
           const updatedSessions = state.chatSessions.map((sess) =>
-            sess.id === activeSessId
+            sess.id === targetId
               ? { ...sess, messages: [...sess.messages, message], updatedAt: new Date() }
               : sess
           )
           return {
-            messages: [...state.messages, message],
+            messages: isActiveTarget ? [...state.messages, message] : state.messages,
             chatSessions: updatedSessions,
           }
         })
       },
 
-      updateMessage: (messageId: string, patch: Partial<Message>) => {
+      updateMessage: (messageId: string, patch: Partial<Message>, conversationId?: string) => {
         set((state) => {
+          const targetId = conversationId || state.activeChatSessionId
+          const isActiveTarget = targetId === state.activeChatSessionId
           const patchMsg = (m: Message) => (m.id === messageId ? { ...m, ...patch } : m)
           return {
-            messages: state.messages.map(patchMsg),
+            messages: isActiveTarget ? state.messages.map(patchMsg) : state.messages,
             chatSessions: state.chatSessions.map((sess) =>
-              sess.id === state.activeChatSessionId
+              sess.id === targetId
                 ? { ...sess, messages: sess.messages.map(patchMsg), updatedAt: new Date() }
                 : sess
             ),
@@ -225,13 +233,15 @@ export const useAppStore = create<AppState>()(
         })
       },
 
-      removeMessage: (messageId: string) => {
+      removeMessage: (messageId: string, conversationId?: string) => {
         set((state) => {
+          const targetId = conversationId || state.activeChatSessionId
+          const isActiveTarget = targetId === state.activeChatSessionId
           const filterMsg = (m: Message) => m.id !== messageId
           return {
-            messages: state.messages.filter(filterMsg),
+            messages: isActiveTarget ? state.messages.filter(filterMsg) : state.messages,
             chatSessions: state.chatSessions.map((sess) =>
-              sess.id === state.activeChatSessionId
+              sess.id === targetId
                 ? { ...sess, messages: sess.messages.filter(filterMsg), updatedAt: new Date() }
                 : sess
             ),
@@ -352,7 +362,7 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      fetchNotebookSources: async (notebookId: string) => {
+      fetchNotebookSources: async (notebookId: string, preferredConversationId?: string) => {
         try {
           const { sources: fetchedSources } = await ApiService.getNotebookById(notebookId);
           set((state) => {
@@ -364,20 +374,29 @@ export const useAppStore = create<AppState>()(
               sources: [...fetchedSources, ...extraSources],
             };
           });
-          get().fetchNotebookChatHistory(notebookId);
+          await get().fetchNotebookChatHistory(notebookId, preferredConversationId);
         } catch {
           // ignore error on fetch sources
         }
       },
 
-      fetchNotebookChatHistory: async (notebookId: string) => {
+      fetchNotebookChatHistory: async (notebookId: string, preferredConversationId?: string) => {
         try {
           const convs = await ApiService.getNotebookConversations(notebookId)
-          let activeSessionId = get().activeChatSessionId
+          const stateBefore = get()
+
+          // Never clobber an in-flight stream — that wiped assistant tokens mid-response.
+          if (stateBefore.isStreaming && stateBefore.activeNotebookId === notebookId) {
+            return
+          }
+
+          const preferred =
+            preferredConversationId ||
+            stateBefore.activeChatSessionId
 
           const resolvedActiveId =
-            activeSessionId && convs.some((c: any) => c.id === activeSessionId)
-              ? activeSessionId
+            preferred && convs.some((c: any) => c.id === preferred)
+              ? preferred
               : convs[0]?.id ?? null
 
           let activeMessages: any[] = []
@@ -389,14 +408,47 @@ export const useAppStore = create<AppState>()(
             }
           }
 
-          const sessions: any[] = convs.map((conv: any, i: number) => ({
-            id: conv.id,
-            notebookId,
-            title: conv.title || `Chat ${i + 1}`,
-            createdAt: new Date(conv.createdAt || Date.now()),
-            updatedAt: new Date(conv.updatedAt || Date.now()),
-            messages: conv.id === resolvedActiveId ? activeMessages : [],
-          }))
+          // Re-check after awaits — user may have started streaming or switched chats.
+          const stateAfter = get()
+          if (stateAfter.isStreaming && stateAfter.activeNotebookId === notebookId) {
+            return
+          }
+          if (
+            stateAfter.activeChatSessionId &&
+            stateAfter.activeChatSessionId !== resolvedActiveId &&
+            stateAfter.activeNotebookId === notebookId &&
+            !preferredConversationId
+          ) {
+            // User switched threads while we were loading; don't overwrite their selection.
+            return
+          }
+
+          const existingById = new Map(
+            stateAfter.chatSessions
+              .filter((s) => s.notebookId === notebookId)
+              .map((s) => [s.id, s])
+          )
+
+          const sessions: any[] = convs.map((conv: any, i: number) => {
+            const existing = existingById.get(conv.id)
+            const preserveLocal =
+              existing &&
+              existing.messages.length > 0 &&
+              conv.id !== resolvedActiveId
+            return {
+              id: conv.id,
+              notebookId,
+              title: conv.title || `Chat ${i + 1}`,
+              createdAt: new Date(conv.createdAt || Date.now()),
+              updatedAt: new Date(conv.updatedAt || Date.now()),
+              // Keep previously loaded messages for inactive threads; load active from DB.
+              messages: conv.id === resolvedActiveId
+                ? activeMessages
+                : preserveLocal
+                  ? existing!.messages
+                  : [],
+            }
+          })
 
           set((state) => {
             const otherSessions = state.chatSessions.filter((s) => s.notebookId !== notebookId)

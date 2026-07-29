@@ -9,6 +9,7 @@ import { buildCursorResult, encodeCursor } from '../utils/cursor-pagination.util
 import { assertTokenBudget } from '../services/workspace-quota.service';
 import { runIdempotencyGuard, completeIdempotencyFromResponse } from '../middlewares/idempotency.middleware';
 import { RAG_SYSTEM_PROMPT } from '../constants/rag.constants';
+import { beginSSE } from '../middlewares/sse.middleware';
 
 export class ChatController {
   async createConversation(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
@@ -82,6 +83,9 @@ export class ChatController {
           content: validated.message,
         });
       }
+
+      // Open SSE only after validation/persistence so JSON errors still work
+      beginSSE(res);
 
       const result = await ragService.streamRAGResponse(
         validated.message,

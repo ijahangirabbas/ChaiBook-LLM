@@ -266,7 +266,10 @@ export class ApiService {
   }
 
   static async getConversationMessages(conversationId: string): Promise<any[]> {
-    const res = await fetch(`${API_BASE_URL}/conversations/${conversationId}/messages`, { headers: await this.headers() });
+    const res = await fetch(
+      `${API_BASE_URL}/conversations/${conversationId}/messages?limit=100`,
+      { headers: await this.headers() }
+    );
     const json = await this.parseJson(res);
     const msgs = json.data || [];
     return msgs.map((m: any) => ({

@@ -43,7 +43,14 @@ app.use(
       return callback(null, false);
     },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'x-request-id', 'Idempotency-Key'],
+    allowedHeaders: [
+      'Authorization',
+      'Content-Type',
+      'Accept',
+      'x-request-id',
+      'Idempotency-Key',
+      'Last-Event-ID',
+    ],
     credentials: true,
   })
 );

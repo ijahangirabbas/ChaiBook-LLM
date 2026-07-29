@@ -5,6 +5,20 @@ import { sendError } from '../utils/http-response.utils';
 import { logger } from '../lib/logger';
 
 export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction): void {
+  if (res.headersSent) {
+    // SSE / streaming response already started — finish with an SSE error if possible.
+    try {
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ type: 'failed', error: err.message || 'Stream error' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      }
+    } catch {
+      // ignore secondary write failures
+    }
+    return;
+  }
+
   if (err instanceof AppError) {
     sendError(res, err.statusCode, err.code, err.message, err.details);
     return;
