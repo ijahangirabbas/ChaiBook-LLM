@@ -34,7 +34,6 @@ export function ChatPage() {
     activeChatSessionId,
     createChatSession,
     fetchNotebooksFromApi,
-    fetchNotebookSources,
     switchChatSession,
   } = useAppStore()
 
