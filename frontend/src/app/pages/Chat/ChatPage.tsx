@@ -34,6 +34,7 @@ export function ChatPage() {
     activeChatSessionId,
     createChatSession,
     fetchNotebooksFromApi,
+    fetchNotebookSources,
     switchChatSession,
   } = useAppStore()
 
@@ -47,7 +48,7 @@ export function ChatPage() {
       setActiveNotebook(currentNotebookId)
     }
     fetchNotebooksFromApi()
-  }, [currentNotebookId, setActiveNotebook, fetchNotebooksFromApi])
+  }, [currentNotebookId])
 
   const currentNotebook = notebooks.find((n) => n.id === currentNotebookId)
   const notebookTitle = currentNotebook?.title ?? 'Research Notebook'

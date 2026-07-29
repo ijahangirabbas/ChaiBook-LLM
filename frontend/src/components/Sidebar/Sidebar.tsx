@@ -21,6 +21,76 @@ const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Plus,
 }
 
+interface SidebarNotebookItemProps {
+  notebook: any
+  isActive: boolean
+  onSelect: () => void
+}
+
+function SidebarNotebookItem({ notebook, isActive, onSelect }: SidebarNotebookItemProps) {
+  const { deleteNotebook } = useAppStore()
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen(false)
+    if (window.confirm(`Are you sure you want to delete "${notebook.title}"?`)) {
+      deleteNotebook(notebook.id)
+    }
+  }
+
+  return (
+    <div className="relative group">
+      <motion.button
+        whileHover={{ x: 2 }}
+        onClick={onSelect}
+        className={cn(
+          'w-full flex items-center justify-between gap-2 px-3 py-2 rounded-sidebar-item text-sm',
+          'text-text-secondary dark:text-text-secondary-dark',
+          'hover:bg-primary/5 hover:text-primary dark:hover:bg-primary/10',
+          'transition-colors duration-150',
+          isActive && 'bg-primary/10 text-primary font-semibold'
+        )}
+        aria-label={`Open notebook: ${notebook.title}`}
+      >
+        <div className="flex items-center gap-2 truncate">
+          <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+          <span className="truncate">{notebook.title}</span>
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen(!menuOpen)
+          }}
+          className={cn(
+            'p-1 rounded hover:bg-gray-200 dark:hover:bg-white/10 transition-colors',
+            'opacity-0 group-hover:opacity-100',
+            menuOpen && 'opacity-100 bg-gray-200 dark:bg-white/10'
+          )}
+          aria-label="Notebook actions"
+        >
+          <MoreHorizontal className="w-4 h-4 shrink-0 text-text-muted dark:text-text-muted-dark" />
+        </button>
+      </motion.button>
+
+      {menuOpen && (
+        <div
+          className="absolute right-2 top-8 z-30 w-36 py-1 bg-card dark:bg-card-dark rounded-xl border border-border dark:border-border-dark shadow-lg"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handleDelete}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete Notebook
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Dashboard variant sidebar
 function DashboardSidebar() {
   const navigate = useNavigate()
@@ -124,28 +194,15 @@ function DashboardSidebar() {
               Your Notebooks
             </p>
             {notebooks.map((nb) => (
-              <motion.button
+              <SidebarNotebookItem
                 key={nb.id}
-                whileHover={{ x: 2 }}
-                onClick={() => {
+                notebook={nb}
+                isActive={activeNotebookId === nb.id || location.pathname.includes(nb.id)}
+                onSelect={() => {
                   setActiveNotebook(nb.id)
                   navigate(`/chat/${nb.id}`)
                 }}
-                className={cn(
-                  'w-full flex items-center justify-between gap-2 px-3 py-2 rounded-sidebar-item text-sm',
-                  'text-text-secondary dark:text-text-secondary-dark',
-                  'hover:bg-primary/5 hover:text-primary dark:hover:bg-primary/10',
-                  'transition-colors duration-150 group',
-                  (activeNotebookId === nb.id || location.pathname.includes(nb.id)) && 'bg-primary/10 text-primary font-semibold'
-                )}
-                aria-label={`Open notebook: ${nb.title}`}
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
-                  <span className="truncate">{nb.title}</span>
-                </div>
-                <MoreHorizontal className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </motion.button>
+              />
             ))}
           </div>
         )}
@@ -366,25 +423,15 @@ function NotebookSidebar() {
               Recent Notebooks
             </p>
             {notebooks.map((nb) => (
-              <motion.button
+              <SidebarNotebookItem
                 key={nb.id}
-                whileHover={{ x: 2 }}
-                onClick={() => {
+                notebook={nb}
+                isActive={activeNotebookId === nb.id || location.pathname.includes(nb.id)}
+                onSelect={() => {
                   setActiveNotebook(nb.id)
                   navigate(`/chat/${nb.id}`)
                 }}
-                className={cn(
-                  'w-full flex items-center justify-between gap-2 px-3 py-2 rounded-sidebar-item text-sm',
-                  'text-text-secondary dark:text-text-secondary-dark',
-                  'hover:bg-primary/5 hover:text-primary dark:hover:bg-primary/10',
-                  'transition-colors duration-150 group',
-                  (activeNotebookId === nb.id || location.pathname.includes(nb.id)) && 'bg-primary/10 text-primary font-semibold'
-                )}
-                aria-label={`Open notebook: ${nb.title}`}
-              >
-                <span className="truncate">{nb.title}</span>
-                <MoreHorizontal className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </motion.button>
+              />
             ))}
           </div>
         )}

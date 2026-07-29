@@ -104,7 +104,7 @@ export class RagService {
         try {
           const llm = new ChatOpenAI({
             openAIApiKey: config.openaiApiKey,
-            modelName: 'llama-3.3-70b-versatile',
+            modelName: config.chatModel,
             temperature: 0.2,
             streaming: true,
             streamUsage: true,

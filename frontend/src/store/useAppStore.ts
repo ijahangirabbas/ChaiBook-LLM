@@ -123,6 +123,9 @@ export const useAppStore = create<AppState>()(
           set({ activeNotebookId: null, activeChatSessionId: null, messages: [] })
           return
         }
+        if (get().activeNotebookId === id) {
+          return
+        }
         set({ activeNotebookId: id, activeChatSessionId: null, messages: [] })
         get().fetchNotebookSources(id)
       },

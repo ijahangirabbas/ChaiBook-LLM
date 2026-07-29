@@ -72,7 +72,7 @@ export const config = {
   qdrantApiKey: env.QDRANT_API_KEY || undefined,
   qdrantCollectionName: env.QDRANT_COLLECTION_NAME,
   embeddingModel: env.EMBEDDING_MODEL,
-  chatModel: 'llama-3.3-70b-versatile',
+  chatModel: env.CHAT_MODEL || 'llama-3.3-70b-versatile',
   clerkSecretKey: env.CLERK_SECRET_KEY,
   clerkPublishableKey: env.CLERK_PUBLISHABLE_KEY,
   testJwtSecret: env.TEST_JWT_SECRET,
