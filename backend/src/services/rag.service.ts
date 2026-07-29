@@ -102,13 +102,9 @@ export class RagService {
         sendSSEEvent(res, { type: 'token.delta', text: fullResponseText });
       } else {
         try {
-          const targetModelName = 'openai/gpt-oss-120b';
-          const isGroq = config.openaiBaseUrl?.includes('api.groq.com');
-          const resolvedModelName = isGroq ? 'llama-3.3-70b-versatile' : targetModelName;
-
           const llm = new ChatOpenAI({
             openAIApiKey: config.openaiApiKey,
-            modelName: resolvedModelName,
+            modelName: 'llama-3.3-70b-versatile',
             temperature: 0.2,
             streaming: true,
             streamUsage: true,
@@ -151,10 +147,14 @@ export class RagService {
             res.off('close', onClose);
             return emptyTokenStats();
           }
-          console.warn(
-            `⚠️ OpenAI streaming error (${llmErr?.message || llmErr}). Synthesizing response from retrieved chunks.`
+          console.error(
+            `❌ LLM Streaming Error for model 'openai/gpt-oss-120b':`,
+            llmErr?.message || llmErr
           );
-          fullResponseText = `Based on your knowledge base sources:\n\n${searchResults.map((r, i) => `[${i + 1}] ${r.document.pageContent}`).join('\n\n')}`;
+          if (llmErr?.response?.data) {
+            console.error('❌ Provider Error Details:', JSON.stringify(llmErr.response.data));
+          }
+          fullResponseText = `[LLM Error: ${llmErr?.message || 'Streaming failed'}]. Synthesized response from retrieved chunks:\n\n${searchResults.map((r, i) => `[${i + 1}] ${r.document.pageContent}`).join('\n\n')}`;
           sendSSEEvent(res, { type: 'token.delta', text: fullResponseText });
           completionTokens = Math.round(fullResponseText.length / 4);
         }
