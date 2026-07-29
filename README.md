@@ -119,6 +119,9 @@ RAG generations use strict system prompts:
 
 ## 📊 Data Flow Diagram
 
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/c2bc6e89-4695-4ee4-84e2-ddcf3b3927db" />
+
+
 ```mermaid
 flowchart TD
     User([User / Browser]) <-->|HTTPS / REST / SSE| FE[React 18 Frontend]
@@ -146,6 +149,9 @@ flowchart TD
 ---
 
 ## 🔄 Sequence Diagram: Upload → Index → Retrieve → Answer
+
+<img width="1691" height="930" alt="image" src="https://github.com/user-attachments/assets/59ad6362-cc7e-4fa6-9b71-ad2db4e7b1db" />
+
 
 ```mermaid
 sequenceDiagram
