@@ -141,7 +141,7 @@ export class SourceService {
       return;
     }
 
-    if (sourceType === 'youtube') {
+    if (sourceType === 'youtube' || sourceType === 'srt' || sourceType === 'vtt') {
       const segments: Array<{ timestamp: string; seconds: number; text: string }> = [];
       const seen = new Set<number>();
       for (const doc of documents) {

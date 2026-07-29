@@ -102,9 +102,13 @@ export class RagService {
         sendSSEEvent(res, { type: 'token.delta', text: fullResponseText });
       } else {
         try {
+          const targetModelName = 'openai/gpt-oss-120b';
+          const isGroq = config.openaiBaseUrl?.includes('api.groq.com');
+          const resolvedModelName = isGroq ? 'llama-3.3-70b-versatile' : targetModelName;
+
           const llm = new ChatOpenAI({
             openAIApiKey: config.openaiApiKey,
-            modelName: config.chatModel,
+            modelName: resolvedModelName,
             temperature: 0.2,
             streaming: true,
             streamUsage: true,

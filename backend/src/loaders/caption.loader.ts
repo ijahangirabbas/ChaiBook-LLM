@@ -58,8 +58,8 @@ export class CaptionLoader extends BaseLoader {
 
   private parseCaptionContent(content: string): TranscriptEntry[] {
     const entries: TranscriptEntry[] = [];
-    // Standard SRT/VTT timecode pattern e.g. 00:01:20,000 --> 00:01:23,400 or 01:20.000 --> 01:23.400
-    const timeRegex = /((?:\d{2}:)?\d{2}:\d{2}[\.,]\d{3})\s*-->\s*((?:\d{2}:)?\d{2}:\d{2}[\.,]\d{3})/;
+    // Standard SRT/VTT timecode pattern e.g. 00:01:20,000 --> 00:01:23,400 or 01:20.000 --> 01:23.400 or 00:01:20 --> 00:01:23
+    const timeRegex = /((?:\d{2}:)?\d{2}:\d{2}(?:[\.,]\d{3})?)\s*-->\s*((?:\d{2}:)?\d{2}:\d{2}(?:[\.,]\d{3})?)/;
 
     const blocks = content.split(/\n\s*\n/);
 
@@ -79,7 +79,7 @@ export class CaptionLoader extends BaseLoader {
         if (timeMatch) {
           const startTimeStr = timeMatch[1];
           const textLines = lines.slice(timeMatchIndex + 1).filter(
-            (l) => !l.startsWith('WEBVTT') && !/^\d+$/.test(l)
+            (l) => !l.startsWith('WEBVTT') && !l.startsWith('NOTE') && !l.startsWith('STYLE') && !/^\d+$/.test(l)
           );
           const text = textLines.join(' ').replace(/<[^>]*>/g, '').trim();
 

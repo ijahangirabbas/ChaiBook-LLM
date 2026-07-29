@@ -15,7 +15,6 @@ const envSchema = z.object({
   QDRANT_API_KEY: z.string().optional(),
   QDRANT_COLLECTION_NAME: z.string().default('chaibook_sources'),
   EMBEDDING_MODEL: z.string().default('jina-embeddings-v5-text-small'),
-  CHAT_MODEL: z.string().default('gpt-4o'),
   CLERK_SECRET_KEY: z.string().optional().default(''),
   CLERK_PUBLISHABLE_KEY: z.string().optional().default(''),
   TEST_JWT_SECRET: z.string().optional().default(''),
@@ -62,12 +61,18 @@ export const config = {
   redisUrl: env.REDIS_URL,
   openaiApiKey: env.OPENAI_API_KEY || env.GROQ_API_KEY || '',
   groqApiKey: env.GROQ_API_KEY || undefined,
-  openaiBaseUrl: env.OPENAI_BASE_URL || (env.GROQ_API_KEY ? 'https://api.groq.com/openai/v1' : undefined),
+  openaiBaseUrl:
+    env.OPENAI_BASE_URL ||
+    (env.OPENAI_API_KEY?.startsWith('sk-or-')
+      ? 'https://openrouter.ai/api/v1'
+      : env.GROQ_API_KEY
+      ? 'https://api.groq.com/openai/v1'
+      : undefined),
   qdrantUrl: env.QDRANT_URL,
   qdrantApiKey: env.QDRANT_API_KEY || undefined,
   qdrantCollectionName: env.QDRANT_COLLECTION_NAME,
   embeddingModel: env.EMBEDDING_MODEL,
-  chatModel: env.CHAT_MODEL,
+  chatModel: 'openai/gpt-oss-120b',
   clerkSecretKey: env.CLERK_SECRET_KEY,
   clerkPublishableKey: env.CLERK_PUBLISHABLE_KEY,
   testJwtSecret: env.TEST_JWT_SECRET,

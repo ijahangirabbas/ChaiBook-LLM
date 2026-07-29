@@ -26,8 +26,12 @@ function parseSubtitlesToTranscript(rawText: string) {
     const timeLineIndex = lines.findIndex((l) => l.includes('-->'))
     if (timeLineIndex !== -1) {
       const timeLine = lines[timeLineIndex]
-      const textLines = lines.slice(timeLineIndex + 1).join(' ')
-      const match = timeLine.match(/(\d{2}:\d{2}:\d{2}[\.,]\d{3}|\d{2}:\d{2}[\.,]\d{3}|\d{2}:\d{2}:\d{2}|\d{2}:\d{2})\s*-->/)
+      const textLines = lines.slice(timeLineIndex + 1)
+        .filter((l) => !l.startsWith('WEBVTT') && !l.startsWith('NOTE') && !l.startsWith('STYLE') && !/^\d+$/.test(l))
+        .join(' ')
+        .replace(/<[^>]*>/g, '')
+        .trim()
+      const match = timeLine.match(/((?:\d{2}:)?\d{2}:\d{2}(?:[\.,]\d{3})?)\s*-->/)
       if (match) {
         const timestamp = match[1].replace(',', '.')
         const parts = timestamp.split(':')
