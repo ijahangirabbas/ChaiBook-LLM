@@ -1,6 +1,7 @@
 import { useAppStore } from '../../store/useAppStore'
 import { cn } from '../../lib/utils'
 import type { Message } from '../../types'
+import { findCitationByNumber, sourceForCitationOpen } from '../../lib/chat.utils'
 
 export function CitationButton({
   sourceNum,
@@ -11,13 +12,13 @@ export function CitationButton({
 }) {
   const { openSourceInspector, sources: storeSources } = useAppStore()
   const activeSources = sources && sources.length > 0 ? sources : storeSources
-  const targetSource = activeSources.find((s) => s.number === sourceNum)
+  const pill = findCitationByNumber(activeSources, sourceNum)
 
   return (
     <button
       onClick={() => {
-        if (!targetSource) return
-        openSourceInspector(targetSource.id, targetSource, 'retrieved')
+        if (!pill) return
+        openSourceInspector(pill.source.id, sourceForCitationOpen(pill), 'retrieved')
       }}
       className={cn(
         'inline-flex items-center justify-center mx-0.5 px-1.5 py-0.2 align-middle',
@@ -25,7 +26,7 @@ export function CitationButton({
         'bg-primary/10 hover:bg-primary/20 dark:bg-primary/20 dark:hover:bg-primary/30',
         'border border-primary/20 transition-all cursor-pointer select-none'
       )}
-      title={targetSource ? `Inspect Source ${sourceNum}: ${targetSource.title}` : `Source ${sourceNum}`}
+      title={pill ? `Inspect Source ${sourceNum}: ${pill.source.title}` : `Source ${sourceNum}`}
     >
       [{sourceNum}]
     </button>

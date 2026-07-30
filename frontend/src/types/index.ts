@@ -24,6 +24,8 @@ export interface SourceChunk {
   pageNumber?: number
   similarity?: number
   timelineSegment?: TimelineSegment
+  /** Matches inline [n] / Cited Sources pill index from the model */
+  citationNumber?: number
 }
 
 export interface Source {

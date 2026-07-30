@@ -1,4 +1,5 @@
 import type { Notebook, SourceIndexingStatus, SourceType } from '../types';
+import { mapCitationsToSources } from '../lib/chat.utils';
 
 declare global {
   interface Window {
@@ -272,27 +273,28 @@ export class ApiService {
     );
     const json = await this.parseJson(res);
     const msgs = json.data || [];
-    return msgs.map((m: any) => ({
-      id: m.id,
-      role: (m.role || 'user').toLowerCase(),
-      content: m.content,
-      timestamp: new Date(m.createdAt || Date.now()),
-      sources: m.sources || (m.citations && m.citations.length > 0
-        ? m.citations.map((c: any, idx: number) => ({
-            id: c.sourceId || c.id || `cite-${idx}`,
-            title: c.title || 'Cited Source',
-            number: idx + 1,
-            chunkId: c.chunkId,
-            retrievedChunk: c.snippet,
-            pageNumber: c.page,
-            similarity: c.score,
-            chunks: c.snippet
-              ? [{ chunkId: c.chunkId, retrievedChunk: c.snippet, pageNumber: c.page, similarity: c.score }]
-              : undefined,
-            pagesText: c.page ? `p.${c.page}` : undefined,
-          }))
-        : undefined),
-    }));
+    return msgs.map((m: any) => {
+      const notebookId = m.notebookId || m.conversation?.notebookId || '';
+      const rawCitations =
+        Array.isArray(m.sources) && m.sources.length > 0
+          ? m.sources
+          : Array.isArray(m.citations) && m.citations.length > 0
+            ? m.citations
+            : [];
+
+      const sources =
+        rawCitations.length > 0
+          ? mapCitationsToSources(rawCitations, [], notebookId)
+          : undefined;
+
+      return {
+        id: m.id,
+        role: (m.role || 'user').toLowerCase(),
+        content: m.content,
+        timestamp: new Date(m.createdAt || Date.now()),
+        sources,
+      };
+    });
   }
 
   static async getChunkById(chunkId: string): Promise<any | null> {

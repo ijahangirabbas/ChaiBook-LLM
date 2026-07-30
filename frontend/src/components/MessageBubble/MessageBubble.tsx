@@ -4,6 +4,7 @@ import { Copy, Check, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react'
 import type { Message } from '../../types'
 import { useAppStore } from '../../store/useAppStore'
 import { cn } from '../../lib/utils'
+import { getCitationPills, sourceForCitationOpen } from '../../lib/chat.utils'
 
 const ProcessedContent = lazy(() =>
   import('./ProcessedContent').then((m) => ({ default: m.ProcessedContent }))
@@ -24,6 +25,8 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
     user?.name?.trim().charAt(0).toUpperCase() ||
     user?.email?.trim().charAt(0).toUpperCase() ||
     'U'
+
+  const citationPills = !isUser && !message.isStreaming ? getCitationPills(message.sources) : []
 
   const handleCopy = async () => {
     try {
@@ -76,23 +79,27 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
           )}
         </div>
 
-        {!isUser && !message.isStreaming && message.sources && message.sources.length > 0 && (
+        {citationPills.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-1">
             <span className="text-[11px] font-semibold text-text-muted dark:text-text-muted-dark mr-1">
               Cited Sources:
             </span>
-            {message.sources.map((s, idx) => (
+            {citationPills.map((pill) => (
               <button
-                key={s.id || idx}
-                onClick={() => openSourceInspector(s.id, s, 'retrieved')}
+                key={`${pill.source.id}-${pill.citationNumber}-${pill.chunk.chunkId || ''}`}
+                onClick={() =>
+                  openSourceInspector(pill.source.id, sourceForCitationOpen(pill), 'retrieved')
+                }
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold border border-primary/20 transition-all cursor-pointer"
-                title={`Click to view exact excerpt from ${s.title}`}
+                title={`Click to view exact excerpt from ${pill.source.title}`}
               >
-                <span>[{s.number || idx + 1}]</span>
-                <span className="max-w-[160px] truncate">{s.title}</span>
-                {(s.pagesText || s.pageNumber) && (
+                <span>[{pill.citationNumber}]</span>
+                <span className="max-w-[160px] truncate">{pill.source.title}</span>
+                {(pill.chunk.pageNumber || pill.source.pagesText) && (
                   <span className="text-[10px] opacity-85 font-mono bg-primary/10 px-1 py-0.2 rounded">
-                    {s.pagesText || `p.${s.pageNumber}`}
+                    {pill.chunk.pageNumber
+                      ? `p.${pill.chunk.pageNumber}`
+                      : pill.source.pagesText}
                   </span>
                 )}
               </button>
