@@ -18,7 +18,7 @@ export function CitationButton({
     <button
       onClick={() => {
         if (!pill) return
-        openSourceInspector(pill.source.id, sourceForCitationOpen(pill), 'retrieved')
+        openSourceInspector(pill.source.id, sourceForCitationOpen(pill), 'overview')
       }}
       className={cn(
         'inline-flex items-center justify-center mx-0.5 px-1.5 py-0.2 align-middle',

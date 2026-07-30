@@ -88,7 +88,7 @@ export function MessageBubble({ message, onRegenerate }: MessageBubbleProps) {
               <button
                 key={`${pill.source.id}-${pill.citationNumber}-${pill.chunk.chunkId || ''}`}
                 onClick={() =>
-                  openSourceInspector(pill.source.id, sourceForCitationOpen(pill), 'retrieved')
+                  openSourceInspector(pill.source.id, sourceForCitationOpen(pill), 'overview')
                 }
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold border border-primary/20 transition-all cursor-pointer"
                 title={`Click to view exact excerpt from ${pill.source.title}`}
