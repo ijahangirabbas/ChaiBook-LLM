@@ -210,7 +210,7 @@ sequenceDiagram
 
 ### 2. BullMQ Redis Connection Errors
 * **Symptom**: `Failed to start BullMQ ingestion worker — is Redis available?`.
-* **Fix**: Verify Redis is running locally (`redis-cli ping`) or inspect your `REDIS_URL` in environment configuration.
+* **Fix**: Verify Valkey/Redis is running (`valkey-cli ping` or `redis-cli ping`) or inspect your `REDIS_URL` in environment configuration.
 
 ### 3. Authentication Failures (401 Unauthorized)
 * **Symptom**: API calls return `401 Unauthorized: Invalid or missing authentication token`.

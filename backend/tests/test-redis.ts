@@ -9,31 +9,28 @@ export async function testRedis(): Promise<boolean> {
   console.log('⚡ 5. Testing Redis & BullMQ Task Queue...');
   console.log('========================================');
 
-  const rawRedisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-  const isUpstash = rawRedisUrl.includes('upstash.io');
-  const redisUrl = isUpstash && rawRedisUrl.startsWith('redis://')
-    ? rawRedisUrl.replace('redis://', 'rediss://')
-    : rawRedisUrl;
+  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  const useTls = redisUrl.startsWith('rediss://');
 
-  console.log(`🔹 Connecting to Redis at: ${redisUrl}...`);
+  console.log(`🔹 Connecting to Valkey/Redis at: ${redisUrl}...`);
 
   const redis = new IORedis(redisUrl, {
     maxRetriesPerRequest: null,
     connectTimeout: 8000,
     lazyConnect: true,
-    tls: isUpstash || redisUrl.startsWith('rediss://') ? {} : undefined,
+    tls: useTls ? {} : undefined,
   });
 
   try {
     // 1. Test Key-Value Operations
     await redis.connect();
     const pingRes = await redis.ping();
-    console.log(`✅ Redis Connection Established! PING Response: "${pingRes}"`);
+    console.log(`✅ Valkey/Redis Connection Established! PING Response: "${pingRes}"`);
 
     const testKey = `chaibook:test:${Date.now()}`;
     await redis.set(testKey, 'BullMQ Redis Test Value', 'EX', 60);
     const value = await redis.get(testKey);
-    console.log(`✅ Redis Read/Write Verified! Key value: "${value}"`);
+    console.log(`✅ Valkey/Redis Read/Write Verified! Key value: "${value}"`);
     await redis.del(testKey);
 
     // 2. Test BullMQ Queue & Worker Processing
@@ -45,7 +42,7 @@ export async function testRedis(): Promise<boolean> {
       port: redis.options.port,
       password: redis.options.password,
       username: redis.options.username,
-      tls: isUpstash || redisUrl.startsWith('rediss://') ? {} : undefined,
+      tls: useTls ? {} : undefined,
       maxRetriesPerRequest: null,
     };
 

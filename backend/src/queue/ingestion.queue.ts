@@ -8,16 +8,13 @@ import { logger } from '../lib/logger';
 import { ingestionJobsTotal } from '../lib/metrics';
 
 const rawRedisUrl = config.redisUrl;
-const isUpstash = rawRedisUrl.includes('upstash.io');
-const redisUrl =
-  isUpstash && rawRedisUrl.startsWith('redis://')
-    ? rawRedisUrl.replace('redis://', 'rediss://')
-    : rawRedisUrl;
+// Valkey / Redis / ElastiCache: enable TLS when URL scheme is rediss://
+const useTls = rawRedisUrl.startsWith('rediss://');
 
-export const redisConnection = new IORedis(redisUrl, {
+export const redisConnection = new IORedis(rawRedisUrl, {
   maxRetriesPerRequest: null,
   lazyConnect: true,
-  tls: isUpstash || redisUrl.startsWith('rediss://') ? {} : undefined,
+  tls: useTls ? {} : undefined,
   retryStrategy: (times) => {
     if (times > 3) return null;
     return Math.min(times * 500, 2000);
@@ -53,13 +50,13 @@ export async function checkRedisConnection(): Promise<{
     return {
       connected: res === 'PONG',
       status: redisConnection.status,
-      url: redisUrl,
+      url: rawRedisUrl,
     };
   } catch (err: any) {
     return {
       connected: false,
       status: redisConnection.status || 'disconnected',
-      url: redisUrl,
+      url: rawRedisUrl,
       error: err.message || 'Unable to connect to Redis server',
     };
   }
