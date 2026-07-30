@@ -501,6 +501,7 @@ export function SourceInspector() {
 
                         {presignedUrl ? (
                           <iframe
+                            key={`${source.id}-page-${source.pageNumber || 1}`}
                             src={`${presignedUrl}#page=${source.pageNumber || 1}`}
                             title={source.title}
                             className="w-full h-[480px] rounded-xl border border-border dark:border-border-dark bg-white"

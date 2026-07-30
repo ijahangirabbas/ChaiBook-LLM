@@ -163,7 +163,11 @@ export function findCitationByNumber(
   return getCitationPills(sources).find((p) => p.citationNumber === sourceNum) || null
 }
 
-/** Build inspector override focused on the clicked citation, keeping all sibling chunks. */
+/**
+ * Build inspector payload for a citation click:
+ * only the clicked excerpt + its page (not sibling chunks).
+ * Source-card clicks should pass the full Source with all chunks instead.
+ */
 export function sourceForCitationOpen(pill: CitationPill): Source {
   return {
     ...pill.source,
@@ -171,5 +175,17 @@ export function sourceForCitationOpen(pill: CitationPill): Source {
     pageNumber: pill.chunk.pageNumber,
     retrievedChunk: pill.chunk.retrievedChunk,
     similarity: pill.chunk.similarity,
+    pagesText: pill.chunk.pageNumber ? `p.${pill.chunk.pageNumber}` : pill.source.pagesText,
+    // Single chunk only — SourceInspector lists all of `chunks`
+    chunks: [
+      {
+        chunkId: pill.chunk.chunkId,
+        retrievedChunk: pill.chunk.retrievedChunk,
+        pageNumber: pill.chunk.pageNumber,
+        similarity: pill.chunk.similarity,
+        timelineSegment: pill.chunk.timelineSegment,
+        citationNumber: pill.citationNumber,
+      },
+    ],
   }
 }
